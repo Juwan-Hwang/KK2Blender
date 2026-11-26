@@ -26,6 +26,21 @@ class Report:
         self.warnings.append(text)
 
 
+def _clear_startup_scene():
+    """Removes Blender's startup cube, camera and light when the file holds nothing else, so the
+    imported scene starts clean (the same rule KKBP uses)."""
+    defaults = {"Cube": "MESH", "Camera": "CAMERA", "Light": "LIGHT"}
+    objs = list(bpy.data.objects)
+    if len(objs) != 3 or any(defaults.get(o.name) != o.type for o in objs):
+        return
+    stores = {"MESH": bpy.data.meshes, "CAMERA": bpy.data.cameras, "LIGHT": bpy.data.lights}
+    for o in objs:
+        data, kind = o.data, o.type
+        bpy.data.objects.remove(o)
+        if data is not None and data.users == 0:
+            stores[kind].remove(data)
+
+
 def import_scene(path, lighting_preset="soft", render_preset="final", import_characters=True,
                  map_from_library=True, light_factor=1.0) -> Report:
     report = Report()
@@ -33,6 +48,7 @@ def import_scene(path, lighting_preset="soft", render_preset="final", import_cha
     folder = scenefile.open_folder(path)
     for note in folder.notes:
         report.warn(note)
+    _clear_startup_scene()
     scene = bpy.context.scene
     scene.render.fps = folder.fps
     scene.render.fps_base = 1.0
@@ -51,7 +67,7 @@ def import_scene(path, lighting_preset="soft", render_preset="final", import_cha
     if map_from_library:
         staging.link_map(folder, stage, report.info)
 
-    if import_characters:
+    if import_characters and folder.scene.get("characters"):
         if not kkbp_link.available():
             report.warn("KKBP isn't enabled, so characters were skipped. Install KKBP (Blender 5.2+) and import again.")
         else:
