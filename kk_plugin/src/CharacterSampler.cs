@@ -302,7 +302,8 @@ namespace KK2Blender
             tracks.Put("status", "status", new[]
             {
                 (float)s.coordinateType, s.hohoAkaRate, (float)s.tearsLv, s.skinTuyaRate, s.nipStandRate,
-                s.eyesOpenMax, s.mouthOpenMax,
+                s.eyesOpenMax, s.mouthOpenMax, (float)s.eyesPtn, (float)s.mouthPtn, (float)s.eyebrowPtn,
+                (float)s.eyesLookPtn, (float)s.neckLookPtn,
             });
             if (s.clothesState != null)
             {
@@ -324,12 +325,48 @@ namespace KK2Blender
             }
         }
 
+        /// <summary>
+        /// The game's eye sets: an eye set (what Studio's eye menu picks, fileStatus.eyesPtn) is one eye
+        /// shape pattern of the eye controller plus which gag-eye object shows. KKBP names its eye
+        /// expression keys after these, so the add-on matches them by name.
+        /// </summary>
+        private List<object> Eyesets()
+        {
+            var list = new List<object>();
+            if (cha.lstCtrl == null)
+            {
+                return list;
+            }
+            var infos = cha.lstCtrl.GetCategoryInfo(ChaListDefine.CategoryNo.cha_eyeset);
+            if (infos == null)
+            {
+                return list;
+            }
+            var keys = new List<int>(infos.Keys);
+            keys.Sort();
+            foreach (int k in keys)
+            {
+                var info = infos[k];
+                list.Add(new JsonObject()
+                    .Set("id", k)
+                    .Set("name", info.Name)
+                    .Set("pattern", info.GetInfoInt(ChaListDefine.KeyType.EyesPtn))
+                    .Set("gag", info.GetInfoInt(ChaListDefine.KeyType.EyeObjNo)));
+            }
+            return list;
+        }
+
         /// <summary>The track file header: what the channels mean, beyond their names.</summary>
         public JsonObject Header()
         {
             return new JsonObject()
                 .Set("subject", "character")
-                .Set("status_layout", new object[] { "coordinate", "blush", "tears_level", "skin_gloss", "nipple_stand", "eyes_open_max", "mouth_open_max" })
+                .Set("status_layout", new object[]
+                {
+                    "coordinate", "blush", "tears_level", "skin_gloss", "nipple_stand", "eyes_open_max", "mouth_open_max",
+                    "eyeset", "mouth_pattern", "eyebrow_pattern", "eye_look", "neck_look",
+                })
+                .Set("eyesets", Eyesets())
                 .Set("renderers", renderers)
                 .Set("face", facePatterns)
                 .Set("eye_textures", eyeTextures);

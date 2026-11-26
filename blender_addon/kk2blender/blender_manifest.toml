@@ -1,0 +1,15 @@
+schema_version = "1.0.0"
+
+id = "kk2blender"
+version = "0.1.0"
+name = "KK2Blender"
+tagline = "Import Koikatsu CharaStudio scenes with their animation, camera and lights"
+maintainer = "Juwan-Hwang"
+type = "add-on"
+website = "https://github.com/Juwan-Hwang/KK2Blender"
+tags = ["Import-Export", "Animation"]
+blender_version_min = "5.2.0"
+license = ["SPDX:MIT"]
+
+[permissions]
+files = "Reads exported scenes and writes renders"

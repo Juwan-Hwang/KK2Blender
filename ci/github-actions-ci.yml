@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  BLENDER_VERSION: "5.2.5"
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  plugin:
+    name: Studio plugin (build + format tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Build (net35, against IllusionMods reference assemblies)
+        run: dotnet build kk_plugin/KK2Blender.Studio.csproj -c Release
+      - name: Format tests
+        env:
+          K2T_SAMPLE_DIR: ${{ runner.temp }}/k2t
+        run: dotnet test kk_plugin/tests/KK2Blender.Format.Tests.csproj -c Release
+      - name: Package for BepInEx
+        run: |
+          mkdir -p dist/BepInEx/plugins/KK2Blender
+          cp kk_plugin/bin/KK2Blender.Studio.dll dist/BepInEx/plugins/KK2Blender/
+          cd dist && zip -r ../KK2Blender-Studio.zip BepInEx
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KK2Blender-Studio
+          path: KK2Blender-Studio.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: k2t-sample
+          path: ${{ runner.temp }}/k2t/sample.k2t
+
+  python:
+    name: Add-on logic (pytest)
+    needs: plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v4
+        with:
+          name: k2t-sample
+          path: ${{ runner.temp }}/k2t
+      - run: pip install numpy pytest
+      - name: pytest (includes the cross-check with the plugin's own track file)
+        env:
+          K2T_SAMPLE_DIR: ${{ runner.temp }}/k2t
+        run: python -m pytest -q tests/python
+
+  blender:
+    name: Add-on in Blender ${{ env.BLENDER_VERSION }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries for headless Blender
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxrender1 libxxf86vm1 libxfixes3 libxi6 libxkbcommon0 libsm6 libgl1 libegl1
+      - name: Cache Blender
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/blender
+          key: blender-${{ env.BLENDER_VERSION }}
+      - name: Download Blender
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/blender
+          curl -sSL "https://download.blender.org/release/Blender${BLENDER_VERSION%.*}/blender-${BLENDER_VERSION}-linux-x64.tar.xz" | tar -xJ -C ~/blender --strip-components=1
+      - name: Blender tests
+        run: ~/blender/blender -b --factory-startup --python-exit-code 1 --python tests/blender/run_tests.py
+      - name: Build the extension zip
+        run: |
+          cd blender_addon/kk2blender
+          ~/blender/blender -b --factory-startup --command extension build --output-dir ../../dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KK2Blender-Blender
+          path: dist/*.zip
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [plugin, python, blender]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/KK2Blender-Studio/*.zip
+            artifacts/KK2Blender-Blender/*.zip
