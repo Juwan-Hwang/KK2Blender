@@ -1,0 +1,8 @@
+*.blend1
+__pycache__/
+bin/
+obj/
+*.user
+.vs/
+exports/
+renders/
