@@ -80,6 +80,21 @@ jobs:
           curl -sSL "https://download.blender.org/release/Blender${BLENDER_VERSION%.*}/blender-${BLENDER_VERSION}-linux-x64.tar.xz" | tar -xJ -C ~/blender --strip-components=1
       - name: Blender tests
         run: ~/blender/blender -b --factory-startup --python-exit-code 1 --python tests/blender/run_tests.py
+      - name: KKBP (pinned) for the end-to-end test
+        env:
+          KKBP_TAG: v2026.11.25
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git clone --depth 1 --branch "$KKBP_TAG" https://github.com/kkbp-dev/kkbp ~/kkbp-src
+          gh release download "$KKBP_TAG" -R kkbp-dev/kkbp -p 'kkbp-*.zip' -p '!kkbp-exporters*' -D ~/kkbp-rel || gh release download "$KKBP_TAG" -R kkbp-dev/kkbp -D ~/kkbp-rel
+          ext=~/.config/blender/${BLENDER_VERSION%.*}/extensions/user_default/kkbp
+          mkdir -p "$ext" && unzip -q -o $(ls ~/kkbp-rel/kkbp-2*.zip) -d "$ext"
+          mods=~/.config/blender/${BLENDER_VERSION%.*}/scripts/modules
+          mkdir -p "$mods"
+          pip download -q --only-binary=:all: --platform manylinux_2_28_x86_64 --python-version 3.13 pillow -d /tmp/wheels
+          unzip -q -o /tmp/wheels/pillow*.whl -d "$mods"
+      - name: End-to-end Import All with KKBP
+        run: KKBP_SRC=~/kkbp-src ~/blender/blender -b --python-exit-code 1 --python tests/blender/run_kkbp_integration.py
       - name: Build the extension zip
         run: |
           cd blender_addon/kk2blender
