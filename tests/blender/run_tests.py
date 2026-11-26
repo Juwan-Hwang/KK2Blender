@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "tests" / "python"))
 
 import kk2blender  # noqa: E402
 from kk2blender import anim, build, character, lighting, pose, render_settings, space  # noqa: E402
-from conftest import write_k2t  # noqa: E402
+from conftest import write_glb_triangle, write_k2t  # noqa: E402
 
 kk2blender.register()
 
@@ -156,9 +156,11 @@ def write_scene_folder(tmp: Path, frames=5):
         ("item:5", "matrix_vis", 0, np.array(item), False),
     ], {"lights": {"light:0": {"name": "Chara light", "type": "directional", "owner": "camera"}}})
     write_k2t(tracks / "time.k2t", frames, [("time", "seconds", 0, np.arange(frames)[:, None] / 30.0, False)])
+    (tmp / "props").mkdir()
+    write_glb_triangle(tmp / "props" / "item_5.glb", (2.0, 0.0, 0.0))
     scene = {"format": "kk2blender-scene", "version": 1, "complete": True, "screen": [1920, 1080],
              "characters": [], "items": [{"key": 5, "name": "Chair", "track": "item:5", "group": 0,
-                                         "category": 1, "no": 2}],
+                                         "category": 1, "no": 2, "model": "props/item_5.glb"}],
              "map": None,
              "bake": {"fps": 30, "frame_count": frames,
                       "tracks": {"scene": "tracks/scene.k2t", "time": "tracks/time.k2t"}}}
@@ -185,6 +187,10 @@ def test_import_all_without_characters():
     fov = 2 * math.atan(cam.data.sensor_height / 2 / cam.data.lens)
     assert abs(math.degrees(fov) - 23.0) < 1e-3, math.degrees(fov)
     chair = bpy.data.objects["Chair"]
+    # The item sits at Unity (1, 0, 0) = Blender (-1, 0, 0); its mesh node at glTF (2, 0, 0) inside it.
+    tri = next(o for o in chair.children if o.type == "MESH")
+    first = tri.matrix_world @ tri.data.vertices[0].co
+    assert np.allclose(first, (1, 0, 0), atol=1e-4), first
     scene.frame_set(4)
     assert chair.hide_render
     assert bpy.data.objects.get(lighting.RIG_NAME) is not None

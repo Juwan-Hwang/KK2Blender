@@ -61,6 +61,7 @@ namespace KK2Blender
                 GUILayout.Label("Length: the Timeline animation (" + TimelineLink.RealDuration.ToString("0.00") + " s)");
             }
 
+            plugin.ExportProps.Value = GUILayout.Toggle(plugin.ExportProps.Value, " Export props");
             plugin.ExportCharacterMeshes.Value = GUILayout.Toggle(plugin.ExportCharacterMeshes.Value, " Prepare character meshes (KKBP)");
 
             GUI.enabled = true;

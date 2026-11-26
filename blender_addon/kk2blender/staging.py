@@ -140,6 +140,9 @@ def build_items(folder, frame_start, collection):
             obj["kk2b_bundle"] = asset.get("bundle", "")
             obj["kk2b_file"] = asset.get("file", "")
         collection.objects.link(obj)
+        model = item.get("model")
+        if model and (folder.path / model).exists():
+            _attach_model(obj, folder.path / model, collection)
         frames = _frames(len(data), frame_start)
         m = space.unity_to_blender(space.rows_to_matrices(data[:, :12]))
         curves = anim.Curves(obj, f"{obj.name} (KK2Blender)")
@@ -150,6 +153,26 @@ def build_items(folder, frame_start, collection):
             curves.curve("hide_viewport", 0, frames, hidden, group="Visibility", interpolation="CONSTANT")
         made.append(obj)
     return made
+
+
+def _attach_model(empty, path, collection):
+    """Imports a prop's .glb (written in the item's own space) and parents it under the item's empty,
+    so it follows the item's baked transform."""
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=str(path))
+    new = [o for o in bpy.data.objects if o not in before]
+    for o in new:
+        for c in list(o.users_collection):
+            c.objects.unlink(o)
+        collection.objects.link(o)
+        if o.parent is None:
+            basis = o.matrix_basis.copy()
+            o.parent = empty
+            o.matrix_parent_inverse.identity()
+            o.matrix_basis = basis
+    if new:
+        empty.empty_display_size = 0.02
+    return new
 
 
 def link_map(folder, collection, log):

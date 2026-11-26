@@ -115,6 +115,43 @@ namespace KK2Blender
             }
             yield return null;
 
+            // 1b. Props: each item's meshes and materials as a .glb.
+            var propFiles = new Dictionary<int, string>();
+            if (plugin.ExportProps.Value)
+            {
+                string propsDir = Path.Combine(Folder, "props");
+                Directory.CreateDirectory(propsDir);
+                var exporter = new PropExporter();
+                var items = objects.OfType<OCIItem>().Where(o => o.objectItem != null).ToList();
+                for (int i = 0; i < items.Count; i++)
+                {
+                    Status = "Writing props " + (i + 1) + "/" + items.Count;
+                    byte[] glb = null;
+                    try
+                    {
+                        glb = exporter.Export(items[i]);
+                    }
+                    catch (Exception e)
+                    {
+                        exporter.Warnings.Add(items[i].objectItem.name + ": " + e.Message);
+                    }
+                    if (glb != null)
+                    {
+                        string name = "item_" + items[i].objectInfo.dicKey + ".glb";
+                        File.WriteAllBytes(Path.Combine(propsDir, name), glb);
+                        propFiles[items[i].objectInfo.dicKey] = "props/" + name;
+                    }
+                    if (i % 10 == 9)
+                    {
+                        yield return null;
+                    }
+                }
+                foreach (var w in exporter.Warnings)
+                {
+                    Plugin.Log.LogWarning("Prop: " + w);
+                }
+            }
+
             // 2. Static description (completed after the bake).
             var scene = new JsonObject()
                 .Set("format", "kk2blender-scene")
@@ -124,7 +161,7 @@ namespace KK2Blender
                 .Set("space", "unity: left-handed, +Y up, metres; matrices are 3x4 row-major")
                 .Set("screen", new object[] { Screen.width, Screen.height })
                 .Set("characters", charEntries)
-                .Set("items", objects.OfType<OCIItem>().Where(o => o.objectItem != null).OrderBy(o => o.objectInfo.dicKey).Select(o => (object)Describe(o)).ToList())
+                .Set("items", objects.OfType<OCIItem>().Where(o => o.objectItem != null).OrderBy(o => o.objectInfo.dicKey).Select(o => (object)Describe(o, propFiles)).ToList())
                 .Set("folders", objects.OfType<OCIFolder>().OrderBy(o => o.objectInfo.dicKey).Select(o => (object)Describe(o)).ToList())
                 .Set("studio_lights", objects.OfType<OCILight>().OrderBy(o => o.objectInfo.dicKey).Select(o => (object)Describe(o)).ToList())
                 .Set("map", DescribeMap(studio))
@@ -281,7 +318,7 @@ namespace KK2Blender
                 .Set("coordinate", cha.fileStatus.coordinateType);
         }
 
-        private static JsonObject Describe(OCIItem item)
+        private static JsonObject Describe(OCIItem item, Dictionary<int, string> propFiles)
         {
             var info = item.itemInfo;
             var o = new JsonObject()
@@ -294,6 +331,11 @@ namespace KK2Blender
                 .Set("no", info.no)
                 .Set("alpha", info.alpha)
                 .Set("colors", info.color != null ? info.color.Select(c => (object)Space.Color(c)).ToList() : new List<object>());
+            string model;
+            if (propFiles.TryGetValue(item.objectInfo.dicKey, out model))
+            {
+                o.Set("model", model);
+            }
             Info.ItemLoadInfo load;
             if (TryItemLoad(info.group, info.category, info.no, out load))
             {

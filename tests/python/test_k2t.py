@@ -55,3 +55,24 @@ def test_reads_the_plugins_own_file():
     late = t.full("late")
     assert np.isnan(late[0]).all()
     np.testing.assert_array_equal(late[1:], [[1, -1], [2, -2]])
+
+
+def test_plugin_glb_is_valid():
+    """The C# glTF writer's sample: a valid GLB 2.0 with one mesh, one material, one image."""
+    import json
+    import struct
+    d = os.environ.get("K2T_SAMPLE_DIR")
+    if not d or not (Path(d) / "sample.glb").exists():
+        pytest.skip("no sample from the C# tests")
+    data = (Path(d) / "sample.glb").read_bytes()
+    magic, version, length = struct.unpack_from("<III", data, 0)
+    assert magic == 0x46546C67 and version == 2 and length == len(data)
+    jlen, jtype = struct.unpack_from("<II", data, 12)
+    assert jtype == 0x4E4F534A
+    gltf = json.loads(data[20:20 + jlen])
+    assert gltf["asset"]["version"] == "2.0"
+    assert len(gltf["meshes"]) == 1 and len(gltf["materials"]) == 1 and len(gltf["images"]) == 1
+    blen, btype = struct.unpack_from("<II", data, 20 + jlen)
+    assert btype == 0x004E4942 and blen == gltf["buffers"][0]["byteLength"]
+    for view in gltf["bufferViews"]:
+        assert view["byteOffset"] + view["byteLength"] <= blen

@@ -145,6 +145,55 @@ namespace KK2Blender.Tests
         }
     }
 
+    public class GlbTests
+    {
+        private static GlbBuilder Triangle()
+        {
+            var b = new GlbBuilder();
+            int img = b.AddImage(new byte[] { 0x89, 0x50, 0x4E, 0x47, 1, 2, 3 });
+            int mat = b.AddMaterial(new GlbBuilder.MaterialSpec { Name = "m", Texture = img, AlphaMode = "MASK" });
+            var mesh = new GlbBuilder.MeshSpec
+            {
+                Name = "tri",
+                Positions = new float[] { 0, 0, 0, 1, 0, 0, 0, 1, 0 },
+                Normals = new float[] { 0, 0, 1, 0, 0, 1, 0, 0, 1 },
+                Uvs = new float[] { 0, 0, 1, 0, 0, 1 },
+            };
+            mesh.Primitives.Add(new GlbBuilder.Primitive { Indices = new[] { 0, 1, 2 }, Material = mat });
+            b.AddNode(mesh, new float[] { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 0, 0, 1 });
+            return b;
+        }
+
+        [Fact]
+        public void WritesAValidContainer()
+        {
+            byte[] glb = Triangle().Build();
+            Assert.Equal(0x46546C67u, BitConverter.ToUInt32(glb, 0));
+            Assert.Equal(2u, BitConverter.ToUInt32(glb, 4));
+            Assert.Equal((uint)glb.Length, BitConverter.ToUInt32(glb, 8));
+            uint jsonLength = BitConverter.ToUInt32(glb, 12);
+            Assert.Equal(0u, jsonLength % 4);
+            string json = Encoding.UTF8.GetString(glb, 20, (int)jsonLength);
+            Assert.Contains("\"alphaMode\":\"MASK\"", json);
+            Assert.Contains("\"min\":[0,0,0]", json);
+            int binHeader = 20 + (int)jsonLength;
+            Assert.Equal(0x004E4942u, BitConverter.ToUInt32(glb, binHeader + 4));
+            Assert.Equal(0u, BitConverter.ToUInt32(glb, binHeader) % 4);
+        }
+
+        [Fact]
+        public void WritesTheCrossCheckSample()
+        {
+            string dir = Environment.GetEnvironmentVariable("K2T_SAMPLE_DIR");
+            if (string.IsNullOrEmpty(dir))
+            {
+                return;
+            }
+            Directory.CreateDirectory(dir);
+            File.WriteAllBytes(Path.Combine(dir, "sample.glb"), Triangle().Build());
+        }
+    }
+
     public class JsonWriterTests
     {
         [Fact]
