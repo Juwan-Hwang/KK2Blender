@@ -20,7 +20,6 @@ Status: design phase. See [docs/design.md](docs/design.md).
 
 Builds on ideas and, where licensed, code from:
 - [KKBridge](https://github.com/rintrint/KKBridge) by rintrint (MIT)
-- [KKBP Importer](https://gitgoon.dev/kkbp-dev/KKBP_Importer) by the KKBP developers (MIT)
-- KKBP Exporter (used as an external dependency only; no license file, so no code is copied)
+- [KKBP](https://github.com/kkbp-dev/kkbp) and [kkbp-maps](https://github.com/kkbp-dev/kkbp-maps) by the KKBP developers (MIT)
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

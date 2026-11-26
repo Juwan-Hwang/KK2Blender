@@ -1,4 +1,4 @@
-# KK2Blender design (v0.1, 2026-11-27)
+# KK2Blender design (v0.2, 2026-11-27)
 
 ## 1. Goal
 
@@ -42,9 +42,11 @@ KK Studio                         Share: exports/<scene>/            Blender (Li
 
 ### 3.1 KK plugin: Export All (C#, BepInEx, net35)
 
-1. **Characters**: for each `OCIChar`, drive the user-installed KKBP Exporter through
-   reflection (all outfits, no pose freeze, T-pose) into `characters/<id>/`. We do not copy its
-   code (no license).
+1. **Characters**: for each `OCIChar`, write a KKBP Export Bundle (glTF + JSON, schema in
+   `kkbp/contract/`) into `characters/<id>/`. Preferred: link the new MIT KKBP exporter core
+   (`kkbp/exporters/core` + `exporters/kk`) and run it on the Studio `ChaControl`, all outfits.
+   Fallback: save each Studio character's card and run KKBP's `kkbp-autoexport.json` batch
+   mode in the maker.
 2. **Bake pass**: play the Timeline from 0 with `Time.captureFramerate = fps` and sample at
    `WaitForEndOfFrame`, exactly as KKBridge does, so DynamicBone physics runs per frame and is
    deterministic. Each frame we record:
@@ -65,15 +67,18 @@ Bake file format `.k2b`: small header + float32 arrays (frame-major), one channe
 JSON. Roughly 1,000 transforms x 10 floats x 300 frames is ~12 MB per character per 10 s,
 compressible with gzip.
 
-### 3.2 Blender add-on: Import All (Python, Blender 4.2 LTS first)
+### 3.2 Blender add-on: Import All (Python, Blender 5.2+, same as new KKBP)
 
 1. Read `scene.json`, set fps, frame range, unit scale, Unity (left-handed, Y-up) to Blender
    (right-handed, Z-up) conversion in one place.
-2. Call the KKBP Importer operator per character (keep the KK armature, not Rigify, so bone
-   names match the bake). Append characters into one scene (KKBP imports one per file).
+2. Import each character bundle with the new KKBP importer (its Core Import keeps game bone
+   names and rebuilds Studio's joint corrections; we drive the deform bones from the bake and
+   keep Rigify off, or bake onto it later). Use KKBP Hooks for our post-import steps.
 3. Apply `.k2b`: write F-curves per bone (local rotation/location/scale relative to rest),
    shape-key F-curves, and visibility keys (`hide_render`/`hide_viewport`) for outfit changes.
-4. Import props/maps glTF and key their transforms and visibility.
+4. Map: link the matching map + time of day from a kkbp-maps library (game lightmaps, lights,
+   sky, grade). Props: our own glTF from the plugin; later, link kkbp-maps prop assets by item.
+   Key transforms and visibility.
 5. Create the camera (sensor/FOV match) and lights from Studio data.
 6. **Auto lighting**: presets (e.g. "Studio match", "Soft anime 3-point", "Cinematic rim"),
    each a world HDRI/color + key/fill/rim lights placed relative to the camera and character
@@ -87,14 +92,31 @@ compressible with gzip.
 renders a frame range to local scratch, resumes from the last finished frame, muxes with
 ffmpeg, copies the video back to the share and cleans scratch (small disk).
 
-## 4. What we reuse
+## 4. Existing projects and what we reuse
 
-| Source | License | Reuse |
-| --- | --- | --- |
-| KKBridge | MIT | Capture loop (captureFramerate + Timeline play + end detection), Timeline reflection shim, camera target/FOV reflection, expression pattern lookup ideas. Not its VMD/Tda bone mapping. |
-| KKBP Importer 9.6.0 | MIT (some files may differ) | Character import, KK shaders, material setup, shape keys. Called as a dependency; small pieces copied only with notices. |
-| KKBP Exporter | No license file | Runtime dependency the user installs. No code copied. |
-| Koikatsu Unity Porter | Binary only | Nothing. |
+| Project | License | What it does | Use |
+| --- | --- | --- | --- |
+| [kkbp-dev/kkbp](https://github.com/kkbp-dev/kkbp) (2026.11.25) | MIT, new code | KK/KKS/SVS exporter (glTF bundle) + Blender 5.2 importer: KK shaders, Rigify, all expressions, all outfits + half-off variants, Studio joint corrections, batch import, Hooks API | **Base.** Character export/import. Our Blender side is a KKBP Hook + scene orchestrator. |
+| [kkbp-dev/kkbp-maps](https://github.com/kkbp-dev/kkbp-maps) v0.1 | MIT | Builds KK maps and props from the game files into Blender asset libraries, with lightmaps, lights, sky and grade, for Eevee | **Maps** (and later props). |
+| [rintrint/KKBridge](https://github.com/rintrint/KKBridge) | MIT | Studio Timeline to VMD | Capture loop, Timeline reflection, camera reflection. Not its Tda/VMD mapping. |
+| [rogerghi/kk-studio-to-blender-importer](https://github.com/rogerghi/kk-studio-to-blender-importer) | No license file | Reads Studio scene cards offline with UnityPy, imports props with hierarchy and tints; experimental static character pose | Reference only, no code copied. Shows scene-card parsing and prop resolving work offline. |
+| [ZhiyeLi/pmx2kk](https://github.com/ZhiyeLi/pmx2kk) | Noncommercial source license | PMX model into KK (opposite direction) | Not used. |
+| Old KKBP Importer (gitgoon) | MIT | Superseded by kkbp-dev/kkbp | Not needed. |
+| Old KKBP Exporter | No license file | Superseded | Not used. |
+| Koikatsu Unity Porter | Binary only | KK to Unity | Not used. |
+
+Nobody yet does the whole Studio scene with Timeline animation, physics, outfit changes,
+camera and lights in one step. That gap is this project.
+
+### Notes from the user's earlier research (E:\kkresearch)
+
+- KK install at `E:\Koikatu`, Unity 5.6.2, Mono (not IL2CPP), x64. Managed DLLs in
+  `CharaStudio_Data\Managed` are what we build against.
+- An earlier attempt to replace the engine (KKModernStudioUnity, HDRP) stalled in Unity
+  editor builds. Lesson: keep KK as the source of truth and bake, do not re-implement it.
+- Installed plugins that change what the bake must capture: Timeline, KKPE, KKABMX (bone
+  scales), DynamicBone editors, MoreAccessories, NodesConstraints, ClothingStateMenu,
+  ExpressionControl, VideoExport. Baking final local transforms covers all of them.
 
 ## 5. Biggest risks
 
@@ -109,22 +131,23 @@ ffmpeg, copies the video back to the share and cleans scratch (small disk).
    simplified materials first.
 5. **Unity `Cloth`** in some mod clothes is not bone-driven. Would need per-vertex cache
    (Alembic/MDD). Deferred.
-6. **KKBP versions**: Importer targets Blender 4.2 LTS and needs mmd_tools; exporter is
-   decompiled and may change. Pin versions.
+6. **KKBP versions**: new KKBP needs Blender 5.2+ and changes fast (dated versions). Pin a
+   version; the bundle schema is versioned. Its exporter runs in the maker; running it on
+   Studio characters is our first integration test.
 7. **"No manual lighting"** is a taste problem. Presets plus a contact-sheet preview pass.
 8. **Disk and network**: Linux disk is small; render to scratch, move out per chunk.
 
 ## 6. Milestones
 
-- **M0 Setup**: SSH to the Windows PC / WSL, read the KK install (game DLLs for building),
-  build toolchain (dotnet SDK, net35 target, references from the user's install), Blender
-  4.2 + mmd_tools + KKBP on Linux, SMB share mounted.
+- **M0 Setup**: SSH to WSL on the Windows PC (done), game DLLs for building, dotnet SDK
+  with net35 target, install KKBP exporter in KK, Blender 5.2 + KKBP + kkbp-maps on Linux,
+  SMB share mounted.
 - **M1 10-second single-character test**: one character, one outfit, 10 s Timeline with body
   motion, hair/skirt physics, a blink and one expression change, a moving camera. Export ->
   import -> Eevee 1080p30 headless render. Pass: side-by-side with a Studio capture, pose and
   physics visibly matching, no manual steps.
 - **M2 Lights + auto lighting**: Studio lights mapped, 3 presets, Cycles preset.
 - **M3 Outfits**: coordinate switches, clothing states, accessory toggles mid-animation.
-- **M4 Props and maps**: glTF export, transforms and visibility keyed.
+- **M4 Props and maps**: kkbp-maps for maps, glTF or kkbp-maps assets for props, keyed.
 - **M5 Multi-character and polish**: several characters, one-click everything, render queue,
   install docs.
