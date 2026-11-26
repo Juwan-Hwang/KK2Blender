@@ -105,7 +105,7 @@ ffmpeg, copies the video back to the share and cleans scratch (small disk).
 | Old KKBP Exporter | No license file | Superseded | Logic reference only. |
 | Koikatsu Unity Porter | Binary only | KK to Unity | Not used. |
 
-Project rule (user, 2026-11-27): **all code in this repo is our own.** Other projects are read for their logic and lessons only; no code is copied or vendored, since their quality varies. Licenses are not the deciding factor. Projects we learned from are credited in THIRD_PARTY_NOTICES.md.
+Project rule (user, 2026-11-27): **all code in this repo is our own.** Other projects are read for their logic only; no code is copied, since their quality varies. Exception, after review (2026-11-27): kkbp-dev/kkbp is well built (JSON Schema contract, 60 ADRs, ~100 test files, golden samples, game-adapter split), so it is used unmodified as a dependency (pinned version, not copied into this repo) for static character export and the Blender character import and shaders. Its exporter is maker-only; Studio scene, per-frame bake, outfit switches, camera and lights are our own code. Licenses are not the deciding factor. Projects we learned from are credited in THIRD_PARTY_NOTICES.md.
 
 Nobody yet does the whole Studio scene with Timeline animation, physics, outfit changes,
 camera and lights in one step. That gap is this project.
