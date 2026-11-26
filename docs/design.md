@@ -92,20 +92,20 @@ compressible with gzip.
 renders a frame range to local scratch, resumes from the last finished frame, muxes with
 ffmpeg, copies the video back to the share and cleans scratch (small disk).
 
-## 4. Existing projects and what we reuse
+## 4. Existing projects and what we learn from them
 
 | Project | License | What it does | Use |
 | --- | --- | --- | --- |
-| [kkbp-dev/kkbp](https://github.com/kkbp-dev/kkbp) (2026.11.25) | MIT, new code | KK/KKS/SVS exporter (glTF bundle) + Blender 5.2 importer: KK shaders, Rigify, all expressions, all outfits + half-off variants, Studio joint corrections, batch import, Hooks API | **Base.** Character export/import. Our Blender side is a KKBP Hook + scene orchestrator. |
-| [kkbp-dev/kkbp-maps](https://github.com/kkbp-dev/kkbp-maps) v0.1 | MIT | Builds KK maps and props from the game files into Blender asset libraries, with lightmaps, lights, sky and grade, for Eevee | **Maps** (and later props). |
-| [rintrint/KKBridge](https://github.com/rintrint/KKBridge) | MIT | Studio Timeline to VMD | Capture loop, Timeline reflection, camera reflection. Not its Tda/VMD mapping. |
-| [rogerghi/kk-studio-to-blender-importer](https://github.com/rogerghi/kk-studio-to-blender-importer) | No license file | Reads Studio scene cards offline with UnityPy, imports props with hierarchy and tints; experimental static character pose | **Props/scene layout.** Reuse its scene-card parser, item resolver and prop mesh loading (UnityPy) for offline prop import. |
+| [kkbp-dev/kkbp](https://github.com/kkbp-dev/kkbp) (2026.11.25) | MIT, new code | KK/KKS/SVS exporter (glTF bundle) + Blender 5.2 importer: KK shaders, Rigify, all expressions, all outfits + half-off variants, Studio joint corrections, batch import, Hooks API | Main logic reference for character export/import (bundle layout, shaders, joint corrections). |
+| [kkbp-dev/kkbp-maps](https://github.com/kkbp-dev/kkbp-maps) v0.1 | MIT | Builds KK maps and props from the game files into Blender asset libraries, with lightmaps, lights, sky and grade, for Eevee | Logic reference for maps and props (lightmaps, sky, grade). |
+| [rintrint/KKBridge](https://github.com/rintrint/KKBridge) | MIT | Studio Timeline to VMD | Logic reference: capture loop, Timeline and camera access. |
+| [rogerghi/kk-studio-to-blender-importer](https://github.com/rogerghi/kk-studio-to-blender-importer) | No license file | Reads Studio scene cards offline with UnityPy, imports props with hierarchy and tints; experimental static character pose | Logic reference for scene-card parsing, item resolving and prop loading. |
 | [ZhiyeLi/pmx2kk](https://github.com/ZhiyeLi/pmx2kk) | Noncommercial source license | PMX model into KK (opposite direction) | Not used. |
 | Old KKBP Importer (gitgoon) | MIT | Superseded by kkbp-dev/kkbp | Not needed. |
-| Old KKBP Exporter | No license file | Superseded | Code may be borrowed where the new exporter lacks something. |
+| Old KKBP Exporter | No license file | Superseded | Logic reference only. |
 | Koikatsu Unity Porter | Binary only | KK to Unity | Not used. |
 
-Project rule (user, 2026-11-27): licenses are not a constraint; any project with source may be used as reference or reused. Attribution is still listed in THIRD_PARTY_NOTICES.md.
+Project rule (user, 2026-11-27): **all code in this repo is our own.** Other projects are read for their logic and lessons only; no code is copied or vendored, since their quality varies. Licenses are not the deciding factor. Projects we learned from are credited in THIRD_PARTY_NOTICES.md.
 
 Nobody yet does the whole Studio scene with Timeline animation, physics, outfit changes,
 camera and lights in one step. That gap is this project.

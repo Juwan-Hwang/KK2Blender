@@ -18,7 +18,7 @@ Status: design phase. See [docs/design.md](docs/design.md).
 
 ## Credits
 
-Builds on ideas and, where licensed, code from:
+Learned from (logic only, no code copied):
 - [KKBridge](https://github.com/rintrint/KKBridge) by rintrint (MIT)
 - [KKBP](https://github.com/kkbp-dev/kkbp) and [kkbp-maps](https://github.com/kkbp-dev/kkbp-maps) by the KKBP developers (MIT)
 
