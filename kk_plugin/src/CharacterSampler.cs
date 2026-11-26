@@ -36,6 +36,10 @@ namespace KK2Blender
         private readonly List<Transform> transformBuffer = new List<Transform>();
         private readonly List<Renderer> rendererBuffer = new List<Renderer>();
 
+        // Channels by object, so the per-frame loop doesn't build a channel name for every bone.
+        private readonly Dictionary<Transform, Channel> boneChannels = new Dictionary<Transform, Channel>();
+        private readonly Dictionary<Renderer, Channel> visChannels = new Dictionary<Renderer, Channel>();
+
         public CharacterSampler(OCIChar oci)
         {
             this.oci = oci;
@@ -71,23 +75,37 @@ namespace KK2Blender
                     continue;
                 }
                 Space.Matrix(toRoot * t.localToWorldMatrix, matrix, 0);
-                tracks.Put("bone:" + paths.Name(t), "matrix", matrix);
+                Channel ch;
+                if (!boneChannels.TryGetValue(t, out ch))
+                {
+                    ch = tracks.Get("bone:" + paths.Name(t), "matrix", 12);
+                    boneChannels[t] = ch;
+                }
+                ch.Put(frame, matrix);
             }
 
             rendererBuffer.Clear();
             root.GetComponentsInChildren(true, rendererBuffer);
             foreach (var r in rendererBuffer)
             {
-                string path = paths.Name(r.transform);
-                if (!renderers.Contains(path))
+                Channel vis;
+                if (!visChannels.TryGetValue(r, out vis))
                 {
-                    renderers.Add(path, Describe(r));
+                    string name = paths.Name(r.transform);
+                    if (!renderers.Contains(name))
+                    {
+                        renderers.Add(name, Describe(r));
+                    }
+                    vis = tracks.Get("vis:" + name, "bool", 1);
+                    visChannels[r] = vis;
                 }
-                tracks.Put("vis:" + path, "bool", r.enabled && r.gameObject.activeInHierarchy ? 1f : 0f);
+                vis.Put(frame, r.enabled && r.gameObject.activeInHierarchy ? 1f : 0f);
+                string path = null;
 
                 var smr = r as SkinnedMeshRenderer;
                 if (smr != null && smr.sharedMesh != null && smr.sharedMesh.blendShapeCount > 0)
                 {
+                    path = paths.Name(r.transform);
                     int n = smr.sharedMesh.blendShapeCount;
                     var weights = new float[n];
                     for (int i = 0; i < n; i++)

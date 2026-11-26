@@ -1,25 +1,103 @@
 # KK2Blender
 
-One-click pipeline from **Koikatsu CharaStudio** to **Blender**: export a whole Studio scene
-(characters, outfits, props/maps, Timeline animation with physics and expressions, camera, lights)
-with one button in KK, import it with one button in Blender, get automatic lighting and render
-settings, and batch-render headless on a Linux GPU box.
+One-click pipeline from **Koikatsu CharaStudio** to **Blender**: press **Export All** in Studio,
+press **Import All** in Blender, render. The Blender scene matches the Studio scene: characters with
+their outfits, Timeline animation with hair and skirt physics and facial expressions, outfit changes
+during the animation, props, camera and lights, with automatic lighting and render settings.
 
-Status: design phase. See [docs/design.md](docs/design.md).
+Status: **v0.1, first version, not yet tested in the game.** The Blender side is tested end to end
+against the real KKBP importer (see [Testing](#testing)); the Studio plugin builds against the game's
+assemblies and waits for its first run in Studio.
+
+## How it works
+
+```
+CharaStudio                      export folder                     Blender 5.2+
+[Export All] ──► cards/c00.png   (each character's card)          [Import All]
+             ──► tracks/*.k2t    (every frame: all bones,          ├─ KKBP imports each character
+                                  faces, outfits, props,           ├─ bones, expressions, outfit
+                                  lights, camera)                  │  visibility, eye looks keyed
+             ──► scene.json      (what is in the scene)            ├─ camera, lights, props, map
+Koikatu.exe (once, automatic)                                      ├─ lighting preset
+  KKBP exporter ──► meshes/      (each character, all outfits)     └─ render preset
+```
+
+The plugin doesn't re-implement the game: it plays the scene with a fixed frame rate and records the
+game's own result every frame (the same idea as VideoExport, without rendering images). Physics,
+IK, KKPE, ABMX, joint corrections and expressions are all captured as the game computed them.
+Character meshes, materials and shaders come from [KKBP](https://github.com/kkbp-dev/kkbp).
+
+Details: [docs/design.md](docs/design.md), file format: [docs/bake-format.md](docs/bake-format.md).
+
+## Install
+
+Game side (Windows, KK with HF Patch):
+
+1. `KK2Blender.Studio.dll` into `Koikatu\BepInEx\plugins\KK2Blender\`.
+2. KKBP's exporter `KKBP.Exporter.KK.dll` (from the `kkbp-exporters-*.zip` of a
+   [KKBP release](https://github.com/kkbp-dev/kkbp/releases)) into `Koikatu\BepInEx\plugins\KKBP\`.
+
+Blender side (5.2 or later, Windows or Linux):
+
+1. Install the KKBP extension zip (`kkbp-*.zip`) and let it install Pillow (its panel has a button).
+2. Install the KK2Blender extension zip.
+3. Optional: build a map library with [kkbp-maps](https://github.com/kkbp-dev/kkbp-maps) and add it
+   as an asset library; Import All then links the scene's map.
+
+## Use
+
+1. In CharaStudio, open the scene, click the KK2Blender toolbar button (or Ctrl+Shift+E) and press
+   **Export All**. It records the Timeline (or a set length without one) at the chosen frame rate.
+2. Start the main game once (the window has a button for it). KKBP exports every character of the
+   export, with all outfits, and the game closes by itself.
+3. In Blender: File > Import > KK2Blender scene, pick the export's `scene.json`.
+4. Render, or headless:
+
+   ```
+   blender -b --python render/render.py -- --import <export folder> --preset final --lighting soft
+   ```
+
+   Frames that are already rendered are skipped, so a stopped render resumes. With ffmpeg on PATH the
+   frames are joined into an mp4.
+
+Lighting presets: **Soft anime** (default), **Studio match** (Studio's own lights), **Cinematic**,
+**Daylight**. Render presets: Preview, Final (EEVEE 1080p), Final 4K, Cycles.
+
+## Known gaps in v0.1
+
+- Props come in as named, animated empties (their game asset is recorded); meshes come later.
+- Male characters may fail KKBP's export, which runs in the female maker.
+- When the outfit changes mid-animation, the body's skin mask (what clothes hide) stays the first outfit's.
+- Blush and skin gloss changes aren't applied; Unity Cloth (not bone-driven) clothes aren't supported.
+
+## Testing
+
+| What | How |
+| --- | --- |
+| Track format (C#) | `dotnet test kk_plugin/tests` |
+| Add-on logic | `pytest tests/python` (includes reading a file written by the C# code) |
+| Add-on in Blender | `blender -b --factory-startup --python-exit-code 1 --python tests/blender/run_tests.py` |
+| End to end with KKBP | `KKBP_SRC=<kkbp source> blender -b --python-exit-code 1 --python tests/blender/run_kkbp_integration.py` |
+
+The end-to-end test builds a KKBP test bundle with KKBP's own test tool, writes an export around it
+as the plugin would, runs Import All with the real KKBP importer and checks that every bone's
+skinning matches the game's to within 1e-4, that expressions are keyed and that a piece of clothing
+comes off on the right frame. CI definition: [ci/](ci/).
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `kk_plugin/` | BepInEx plugin for KK Studio: "Export All" (C#, net35) |
-| `blender_addon/` | Blender add-on: "Import All", lighting presets, render settings (Python) |
-| `render/` | Headless batch render scripts for `blender -b` on Linux |
-| `docs/` | Design doc, format spec, test logs |
+| `kk_plugin/` | BepInEx plugin for CharaStudio: Export All (C#, net35) |
+| `blender_addon/kk2blender/` | Blender extension: Import All, lighting and render presets |
+| `render/` | Headless render script |
+| `tests/` | Python and Blender tests |
+| `docs/` | Design, file format, test plan |
 
 ## Credits
 
-Learned from (logic only, no code copied):
-- [KKBridge](https://github.com/rintrint/KKBridge) by rintrint (MIT)
-- [KKBP](https://github.com/kkbp-dev/kkbp) and [kkbp-maps](https://github.com/kkbp-dev/kkbp-maps) by the KKBP developers (MIT)
+Built on [KKBP](https://github.com/kkbp-dev/kkbp) (used as a dependency, MIT). Learned from
+[KKBridge](https://github.com/rintrint/KKBridge), [kkbp-maps](https://github.com/kkbp-dev/kkbp-maps)
+and VideoExport. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+License: MIT.

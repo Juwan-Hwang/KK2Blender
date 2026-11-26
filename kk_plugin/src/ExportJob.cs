@@ -138,7 +138,10 @@ namespace KK2Blender
             int fps = plugin.Fps.Value;
             bool useTimeline = TimelineLink.Available && TimelineLink.RealDuration > 0f;
             float duration = useTimeline ? TimelineLink.RealDuration : plugin.FallbackSeconds.Value;
-            int frames = Mathf.Max(1, Mathf.RoundToInt(duration * fps) + 1);
+            // Timeline wraps its time at its duration, so a clip that fills the whole Timeline ends
+            // one frame early (its last frame would show frame 0 again).
+            bool fillsTimeline = useTimeline && Mathf.Abs(TimelineLink.Duration - duration) < 0.5f / fps;
+            int frames = Mathf.Max(1, Mathf.RoundToInt(duration * fps) + (fillsTimeline ? 0 : 1));
 
             savedCaptureFramerate = Time.captureFramerate;
             touched = true;
