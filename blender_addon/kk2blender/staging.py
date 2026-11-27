@@ -306,14 +306,6 @@ def build_studio_cameras(folder, frame_start, collection, lens):
         curves = anim.Curves(obj, f"{obj.name} (KK2Blender)")
         frames = _frames(len(data), frame_start)
         _key_transform(curves, frames, m)
-        if item.get("key") in markers:
-            # A rig handle: kept (it carries the rig's motion) but hidden; unhide it in the outliner.
-            obj["kk2b_rig_marker"] = True
-            for o in [obj] + list(obj.children_recursive):
-                o.hide_render = True
-                o.hide_viewport = True
-            made.append(obj)
-            continue
         hidden = (np.nan_to_num(data[:, 12]) < 0.5).astype(float)
         if hidden.any():
             curves.curve("hide_viewport", 0, frames, hidden, group="Visibility", interpolation="CONSTANT")
