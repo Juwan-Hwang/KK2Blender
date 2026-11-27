@@ -40,6 +40,8 @@ namespace KK2Blender.Format
             public float[] Uvs; // optional, uv per vertex (glTF: origin top left)
             public float[] Uvs2; // optional second set (lightmap UVs, already scaled and offset)
             public float[] Colors; // optional rgba per vertex
+            public float[] SourceIndex; // optional: each vertex's index in the game mesh (_KK_VERTEX)
+            public float SkinOrdinal = -1; // with SourceIndex: which skinned renderer of the item (_KK_MESH)
             public List<Primitive> Primitives = new List<Primitive>();
         }
 
@@ -154,6 +156,16 @@ namespace KK2Blender.Format
                 if (mesh.Colors != null)
                 {
                     attributes.Set("COLOR_0", FloatAccessor(mesh.Colors, 4, "VEC4", false));
+                }
+                if (mesh.SourceIndex != null)
+                {
+                    attributes.Set("_KK_VERTEX", FloatAccessor(mesh.SourceIndex, 1, "SCALAR", false));
+                    var ord = new float[mesh.SourceIndex.Length];
+                    for (int i = 0; i < ord.Length; i++)
+                    {
+                        ord[i] = mesh.SkinOrdinal;
+                    }
+                    attributes.Set("_KK_MESH", FloatAccessor(ord, 1, "SCALAR", false));
                 }
                 var prims = new List<object>();
                 foreach (var p in mesh.Primitives)

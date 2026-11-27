@@ -44,6 +44,12 @@ namespace KK2Blender
             lightmapImageOf.Clear();
             withLightmaps = lightmaps;
             Matrix4x4 toRoot = root.worldToLocalMatrix;
+            skinOrdinal = new Dictionary<Renderer, int>();
+            var skins = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            for (int i = 0; i < skins.Length; i++)
+            {
+                skinOrdinal[skins[i]] = i;
+            }
             foreach (var r in root.GetComponentsInChildren<Renderer>(includeInactive))
             {
                 if (!includeInactive && !r.enabled)
@@ -61,6 +67,8 @@ namespace KK2Blender
             }
             return glb.NodeCount > 0 ? glb.Build() : null;
         }
+
+        private Dictionary<Renderer, int> skinOrdinal = new Dictionary<Renderer, int>();
 
         private void AddRenderer(Renderer r, Matrix4x4 toItem)
         {
@@ -269,6 +277,17 @@ namespace KK2Blender
             }
 
             var spec = new GlbBuilder.MeshSpec { Name = r.name };
+            int ordinal;
+            if (remap == null && r is SkinnedMeshRenderer && skinOrdinal.TryGetValue(r, out ordinal))
+            {
+                // Lets Blender match these vertices to the per-frame skinned positions (SceneSampler "skin" tracks).
+                spec.SkinOrdinal = ordinal;
+                spec.SourceIndex = new float[count];
+                for (int i = 0; i < count; i++)
+                {
+                    spec.SourceIndex[i] = i;
+                }
+            }
             // glTF space: Unity mirrored in X (as KKBP does); triangles reverse their winding.
             spec.Positions = new float[count * 3];
             bool normals = n != null && n.Length == v.Length;

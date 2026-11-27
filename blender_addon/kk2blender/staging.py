@@ -188,10 +188,15 @@ def build_items(folder, frame_start, collection, hide_rig_markers=True):
         model = item.get("model")
         if model and (folder.path / model).exists():
             from . import toon
-            for part in _attach_model(obj, folder.path / model, collection):
+            parts = _attach_model(obj, folder.path / model, collection)
+            for part in parts:
                 if part.type == "MESH":
                     for m in part.data.materials:
                         toon.apply(m)
+            try:
+                _apply_item_skins(folder, item, name, parts, frame_start)
+            except Exception as e:  # an animated prop's motion is a nicety; never lose the scene over it
+                print(f"KK2Blender: {item.get('name')}: skinned motion not applied: {e}")
         frames = _frames(len(data), frame_start)
         m = space.unity_to_blender(space.rows_to_matrices(data[:, :12]))
         curves = anim.Curves(obj, f"{obj.name} (KK2Blender)")
@@ -210,6 +215,51 @@ def build_items(folder, frame_start, collection, hide_rig_markers=True):
             curves.curve("hide_viewport", 0, frames, hidden, group="Visibility", interpolation="CONSTANT")
         made.append(obj)
     return made
+
+
+def _point_attr(mesh, *names):
+    for n in names:
+        a = mesh.attributes.get(n)
+        if a is not None and a.domain == "POINT":
+            vals = np.zeros(len(mesh.vertices), dtype=np.float64)
+            a.data.foreach_get("value", vals)
+            return np.rint(vals).astype(np.int64)
+    return None
+
+
+def _apply_item_skins(folder, item, track, parts, frame_start):
+    """Animated props (their own skeleton or Animator): the bake carries every skinned vertex every
+    frame ("<item>:skin:<n>"); played back as a point cache on the prop's matching mesh."""
+    tracks = folder.scene_tracks
+    if tracks is None:
+        return
+    from . import cloth
+    cache_dir = folder.path / "blender_cache"
+    for part in parts:
+        if part.type != "MESH":
+            continue
+        me = part.data
+        ordinal = _point_attr(me, "_KK_MESH", "KK_MESH")
+        index = _point_attr(me, "_KK_VERTEX", "KK_VERTEX")
+        if ordinal is None or index is None or len(ordinal) == 0:
+            continue
+        name = f"{track}:skin:{int(ordinal[0])}"
+        if name not in tracks:
+            continue
+        data = pose.fill_gaps(tracks.full(name))
+        pts = data.reshape(len(data), -1, 3)
+        if index.max() >= pts.shape[1]:
+            continue
+        g = pts[:, index, :]
+        # glTF (Y up) to Blender (Z up), the way the glTF importer converts the mesh itself.
+        b = np.stack([g[..., 0], -g[..., 2], g[..., 1]], axis=-1).astype(np.float32)
+        cache_dir.mkdir(exist_ok=True)
+        path = cache_dir / f"{bpy.path.clean_name(part.name)}_{item.get('key')}.pc2"
+        cloth.write_pc2(path, b, float(frame_start))
+        mod = part.modifiers.new("KK2Blender motion", "MESH_CACHE")
+        mod.cache_format = "PC2"
+        mod.filepath = str(path)
+        mod.frame_start = float(frame_start)
 
 
 def _attach_model(empty, path, collection):

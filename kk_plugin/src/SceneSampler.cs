@@ -169,7 +169,44 @@ namespace KK2Blender
                         Space.Matrix(toItem * b.localToWorldMatrix, matrix, 0);
                         tracks.Put(key + ":bone:" + bones.Name(b), "matrix", matrix);
                     }
+                    SampleItemSkins(item, key);
                 }
+            }
+        }
+
+        private Mesh skinBake;
+
+        /// <summary>"item:&lt;key&gt;:skin:&lt;n&gt;": an animated item's skinned meshes, every vertex every frame, in
+        /// the renderer's own space (no scale) with X mirrored like the props' glb, so Blender can play them
+        /// back as a point cache on the prop's mesh (matched by _KK_MESH and _KK_VERTEX).</summary>
+        private void SampleItemSkins(OCIItem item, string key)
+        {
+            var skins = item.objectItem.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            if (skins.Length == 0)
+            {
+                return;
+            }
+            if (skinBake == null)
+            {
+                skinBake = new Mesh();
+            }
+            for (int i = 0; i < skins.Length; i++)
+            {
+                var smr = skins[i];
+                if (smr.sharedMesh == null)
+                {
+                    continue;
+                }
+                smr.BakeMesh(skinBake);
+                var v = skinBake.vertices;
+                var r = new float[v.Length * 3];
+                for (int k = 0; k < v.Length; k++)
+                {
+                    r[k * 3] = -v[k].x;
+                    r[k * 3 + 1] = v[k].y;
+                    r[k * 3 + 2] = v[k].z;
+                }
+                tracks.Put(key + ":skin:" + i, "points", r);
             }
         }
 
