@@ -538,6 +538,12 @@ class CharacterBake:
 
 def apply(ch, bundle, tracks, frame_start, log, export_folder=None):
     bake = CharacterBake(ch, bundle, tracks, frame_start, log)
+    arm = ch.armature
+    if arm is not None:
+        # The baked skeleton is hundreds of bones; drawn in front they bury the character in black.
+        arm.show_in_front = False
+        arm.data.display_type = "STICK"
+        arm.hide_set(True)
     bake.apply_bones()
     bake.apply_root()
     bake.apply_face()

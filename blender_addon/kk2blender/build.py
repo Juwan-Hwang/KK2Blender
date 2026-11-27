@@ -92,7 +92,9 @@ def import_scene(path, lighting_preset="soft", render_preset="final", import_cha
                                     lambda text, n=ch_info["name"]: report.info(f"{n}: {text}"), folder.path)
                     report.info(f"{ch_info['name']}: done in {time.time() - t0:.1f} s")
                 except Exception as e:  # one character failing shouldn't lose the rest of the scene
-                    report.warn(f"{ch_info['name']}: {e}")
+                    import traceback
+                    traceback.print_exc()  # the system console keeps the details
+                    report.warn(f"{ch_info['name']}: {type(e).__name__}: {e}")
 
     aspect = 16 / 9
     screen = folder.scene.get("screen")

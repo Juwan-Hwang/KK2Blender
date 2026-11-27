@@ -53,13 +53,23 @@ def rest_matrices(bones: list[RestBone]) -> dict[str, np.ndarray]:
     return {bid: space.gltf_to_blender(m) for bid, m in world_gltf.items()}
 
 
+def safe_inv(m: np.ndarray) -> np.ndarray:
+    """Inverse of one or many 4x4 matrices. A bone scaled to zero in the game (a hidden part, a
+    flattened bust) has no inverse; those take the pseudo-inverse, so its children collapse with it
+    the way they do in the game instead of the whole import failing."""
+    try:
+        return np.linalg.inv(m)
+    except np.linalg.LinAlgError:
+        return np.linalg.pinv(m)
+
+
 def posed_matrices(baked_unity_rows: np.ndarray, rest_blender: np.ndarray, matrix_local: np.ndarray,
                    game_scale=(1.0, 1.0, 1.0)) -> np.ndarray:
     """P for every frame: (N, 12) Unity rows -> (N, 4, 4) armature-space posed matrices."""
     m = space.rows_to_matrices(baked_unity_rows)
     inv_s = np.diag([1.0 / max(float(s), 1e-9) for s in game_scale] + [1.0])
     m = m @ inv_s
-    return space.unity_to_blender(m) @ np.linalg.inv(rest_blender) @ matrix_local
+    return space.unity_to_blender(m) @ safe_inv(rest_blender) @ matrix_local
 
 
 def basis_matrices(posed: dict[str, np.ndarray], parents: dict[str, str | None],
@@ -83,17 +93,17 @@ def basis_matrices(posed: dict[str, np.ndarray], parents: dict[str, str | None],
             resolved[name] = np.broadcast_to(matrix_local[name], (frames, 4, 4))
             return resolved[name]
         pp = pose_of(parent)
-        resolved[name] = pp @ np.linalg.inv(matrix_local[parent]) @ matrix_local[name]
+        resolved[name] = pp @ safe_inv(matrix_local[parent]) @ matrix_local[name]
         return resolved[name]
 
     out = {}
     for name, p in posed.items():
         parent = parents.get(name)
-        lin = np.linalg.inv(matrix_local[name])
+        lin = safe_inv(matrix_local[name])
         if parent is None:
             out[name] = lin @ p
         else:
-            out[name] = lin @ matrix_local[parent] @ np.linalg.inv(pose_of(parent)) @ p
+            out[name] = lin @ matrix_local[parent] @ safe_inv(pose_of(parent)) @ p
     return out
 
 
