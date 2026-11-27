@@ -338,6 +338,93 @@ class CharacterBake:
             keyed += 1
         self.log(f"keyed visibility on {keyed} objects")
 
+    def apply_outfit_schedule(self):
+        """Keys the outfit worn on each frame on the armature, for the body textures (outfits.py)."""
+        arm = self.ch.armature
+        if arm is None or not len(self.coordinate):
+            return
+        from . import outfits
+        arm[outfits.PROP] = float(self.coordinate[0])
+        arm[outfits.KEY] = self.ch.key
+        anim.Curves(arm, "").curve(f'["{outfits.PROP}"]', 0, _frames(self.n, self.frame_start),
+                                   self.coordinate.astype(float), group="Outfit", interpolation="CONSTANT")
+
+    # --- material values ------------------------------------------------------------------
+
+    # Game shader property -> KKBP Material Template parameters it sets (KKBP's templates name their
+    # parameters after the game's, see its library/descriptions.py).
+    MATERIAL_PARAMS = {
+        "_Color": ("color", "color_alpha"), "_Color2": ("color2", "color2_alpha"),
+        "_Color3": ("color3", "color3_alpha"), "_ShadowColor": ("shadow_color", None),
+        "_shadowcolor": ("shadow_color", None), "_overcolor1": ("overlay_color1", "overlay_color1_alpha"),
+        "_overcolor2": ("overlay_color2", "overlay_color2_alpha"), "_SpecularColor": ("specular_color", None),
+    }
+
+    def apply_material_values(self):
+        """Keys the material values the game changed during the clip (a blush coming up, colours a
+        plugin animated) on the KKBP materials that have a matching parameter. Values that never
+        change are left as KKBP set them from the bundle."""
+        import sys
+        from . import kkbp_link
+        try:
+            pkg = kkbp_link.api().__name__.rpartition(".")[0]
+        except kkbp_link.KkbpMissing:
+            return
+        templates = sys.modules.get(pkg + ".templates")
+        info = self.tracks.header.get("materials", {})
+        if templates is None or not info:
+            return
+        by_game_name: dict[str, list[str]] = {}
+        for ch_name, meta in info.items():
+            by_game_name.setdefault(meta.get("material", ""), []).append(ch_name)
+        game_name_of = {m.id: m.name for m in self.bundle.materials}
+        frames = _frames(self.n, self.frame_start)
+        keyed, unmatched = 0, set()
+        for mat in {m for o in self.ch.parts() if o.type == "MESH" for m in o.data.materials if m}:
+            gname = game_name_of.get(mat.get(ID))
+            channels = by_game_name.get(gname, []) + by_game_name.get(f"{gname} (Instance)", [])
+            if not channels:
+                continue
+            ch_name = channels[0]
+            meta = info[ch_name]
+            data = self.tracks.full(ch_name)
+            changing = ~np.all(np.isclose(data, data[:1], equal_nan=True), axis=0)
+            if not changing.any():
+                continue
+            try:
+                params = set(templates.params(mat))
+            except Exception:
+                continue
+            curves = None
+            for i, prop in enumerate(meta.get("colors", [])):
+                cols = slice(i * 4, i * 4 + 4)
+                if not changing[cols].any():
+                    continue
+                rgb_param, alpha_param = self.MATERIAL_PARAMS.get(prop, (None, None))
+                done_here = False
+                for pname, comps in ((rgb_param, range(3)), (alpha_param, (3,))):
+                    if pname is None or pname not in params:
+                        continue
+                    socket = templates.param(mat, pname)
+                    path = socket.path_from_id() + ".default_value"
+                    owner = socket.id_data
+                    curves = anim.Curves(owner, f"{owner.name} values (KK2Blender)")
+                    for c in comps:
+                        index = c if len(comps) > 1 else -1
+                        values = data[:, i * 4 + c]
+                        if index < 0:
+                            curves.curve(path, 0, frames, values, group="Game values")
+                        else:
+                            curves.curve(path, index, frames, values, group="Game values")
+                    keyed += 1
+                    done_here = True
+                if not done_here:
+                    unmatched.add(f"{gname}.{prop}")
+        if keyed:
+            self.log(f"keyed {keyed} material values")
+        if unmatched:
+            self.log(f"material values that changed but have no KKBP parameter: {', '.join(sorted(unmatched)[:10])}")
+
     # --- eyes --------------------------------------------------------------------------------
 
     def apply_eye_textures(self):
@@ -393,6 +480,11 @@ def apply(ch, bundle, tracks, frame_start, log):
     bake.apply_root()
     bake.apply_face()
     bake.apply_visibility()
+    bake.apply_outfit_schedule()
+    try:
+        bake.apply_material_values()
+    except Exception as e:
+        log(f"material values not applied: {e}")
     try:
         bake.apply_eye_textures()
     except Exception as e:  # eye looks are a nicety; never fail the import over them

@@ -6,10 +6,12 @@ face, scenefile) can be tested without Blender.
 
 
 def register():
-    from . import ui
+    from . import outfits, ui
     ui.register()
+    outfits.register()
 
 
 def unregister():
-    from . import ui
+    from . import outfits, ui
+    outfits.unregister()
     ui.unregister()

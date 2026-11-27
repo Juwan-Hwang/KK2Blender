@@ -117,6 +117,9 @@ def make_export(tmp: Path):
     channels.append(("vis:BodyTop/p_cf_body_00/o_body_a", "bool", 0, np.ones((FRAMES, 1)), True))
     blink = np.array([[100.0 * f / (FRAMES - 1), 50.0] for f in range(FRAMES)])
     channels.append(("shape:BodyTop/p_cf_head/cf_O_face", "weights", 0, blink, False))
+    # A blush coming up: the face material's _overcolor2 alpha, as the plugin bakes it.
+    blush = np.array([[1.0, 0.5, 0.5, 0.04 * f, 0.2] for f in range(FRAMES)])
+    channels.append(("mat:BodyTop/p_cf_head/cf_O_face:0", "material", 0, blush, False))
 
     (tmp / "tracks").mkdir()
     header = {
@@ -128,6 +131,9 @@ def make_export(tmp: Path):
             "BodyTop/p_cf_head/cf_O_face": {"name": "cf_O_face", "owner": "head",
                                             "blend_shapes": ["eye_face.f00_def_cl", "kuti_face.f00_a"]},
         },
+        "materials": {"mat:BodyTop/p_cf_head/cf_O_face:0": {
+            "material": "cf_m_face_00", "shader": "Shader Forge/main_skin", "colors": ["_overcolor2"],
+            "floats": ["_SpecularPower"], "vectors": [], "textures": [], "texture_names": []}},
         "eyesets": [{"id": 0, "name": "笑い", "pattern": 0, "gag": 0},
                     {"id": 40, "name": "ハート目", "pattern": 0, "gag": 3}],
     }
