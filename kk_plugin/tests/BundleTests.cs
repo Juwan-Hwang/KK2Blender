@@ -291,5 +291,20 @@ namespace KK2Blender.Tests
             BoneNames.SettleHelpers(c.Bones, new[] { "BodyTop/cf_n_height/cf_j_hips/cf_j_spine01", head.Key }, b => "deform");
             return c;
         }
-    }
+    
+        [Fact]
+        public static void SkinningBlendsPerVertexWhenBindPosesDisagree()
+        {
+            var skin = new RestSolver.Skin
+            {
+                Key = "m", BoneKeys = new[] { "a", "b" }, Exact = false,
+                RestSkin = new[] { Affine.Identity, new Affine { M00 = 1, M11 = 1, M22 = 1, M03 = 1 } },
+                Joints = new[] { 0, 1, 0, 0, 1, 0, 0, 0 }, Weights = new[] { 0.5f, 0.5f, 0, 0, 1f, 0, 0, 0 },
+            };
+            var p = new Skinning(skin, 2).Positions(new[] { 0f, 0f, 0f, 0f, 0f, 0f });
+            Assert.Equal(0.5f, p[0], 5);
+            Assert.Equal(1f, p[3], 5);
+            Assert.Throws<ArgumentException>(() => new Skinning(skin, 3));
+        }
+}
 }

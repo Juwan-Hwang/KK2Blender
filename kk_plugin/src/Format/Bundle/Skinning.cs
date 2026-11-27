@@ -24,6 +24,10 @@ namespace KK2Blender.Format.Bundle
                 handedness = new[] { m.Determinant < 0 ? -1.0 : 1.0 };
                 return;
             }
+            if (skin.Joints.Length < vertexCount * 4 || skin.Weights.Length < vertexCount * 4)
+            {
+                throw new ArgumentException("skin has " + skin.Joints.Length / 4 + " weighted vertices, mesh has " + vertexCount);
+            }
             perVertex = new Affine[vertexCount];
             normalMatrix = new Affine[vertexCount];
             handedness = new double[vertexCount];
@@ -50,12 +54,16 @@ namespace KK2Blender.Format.Bundle
 
         private Affine MatrixOf(int v)
         {
-            return perVertex != null ? perVertex[v] : (skin.Rigid ? skin.RestSkin[0] : skin.K);
+            if (perVertex != null)
+            {
+                return v < perVertex.Length ? perVertex[v] : skin.K;
+            }
+            return skin.Rigid ? skin.RestSkin[0] : skin.K;
         }
 
         private Affine NormalOf(int v)
         {
-            return perVertex != null ? normalMatrix[v] : normalMatrix[0];
+            return perVertex != null && v < normalMatrix.Length ? normalMatrix[v] : normalMatrix[0];
         }
 
         private static Affine NormalMatrix(Affine m)
@@ -142,7 +150,7 @@ namespace KK2Blender.Format.Bundle
                 {
                     x /= len; y /= len; z /= len;
                 }
-                double h = perVertex != null ? handedness[v] : handedness[0];
+                double h = perVertex != null && v < handedness.Length ? handedness[v] : handedness[0];
                 r[v * 4] = (float)x;
                 r[v * 4 + 1] = (float)y;
                 r[v * 4 + 2] = (float)z;

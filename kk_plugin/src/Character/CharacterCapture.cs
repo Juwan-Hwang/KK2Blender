@@ -1462,7 +1462,7 @@ namespace KK2Blender.Character
                     warnings.Add(rec.Mesh.Path + ": its bind pose differs from the body's by up to " + s.Mismatch.ToString("0.0000", CultureInfo.InvariantCulture) +
                         "; its rest shape is blended (exact only where one bone carries a vertex)");
                 }
-                var skinning = new Skinning(s, rec.Mesh.VertexCount);
+                var skinning = new Skinning(s, rec.Positions.Length / 3);
                 rec.Mesh.Positions = skinning.Positions(rec.Positions);
                 rec.Mesh.Normals = rec.Normals != null ? skinning.Normals(rec.Normals) : null;
                 rec.Mesh.Tangents = rec.Tangents != null && rec.Normals != null ? skinning.Tangents(rec.Tangents) : null;
