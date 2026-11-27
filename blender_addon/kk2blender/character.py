@@ -115,9 +115,138 @@ class CharacterBake:
 
     # --- expressions -------------------------------------------------------------------------
 
+    def raw_shape_weights(self) -> dict[str, np.ndarray]:
+        """{"raw:<game blend shape name>": (frames,) weight 0..1} from every skinned renderer's baked
+        blend shape weights. KK's blend shape names carry their mesh ("eye_face.f00_def_op",
+        "kuti_ha.ha00_def_op"), so a name means the same shape wherever it is."""
+        out: dict[str, np.ndarray] = {}
+        for path, info in self.tracks.header.get("renderers", {}).items():
+            names = info.get("blend_shapes")
+            ch = "shape:" + path
+            if not names or ch not in self.tracks:
+                continue
+            data = self.tracks.full(ch)
+            if data.shape[1] != len(names):
+                continue
+            for i, name in enumerate(names):
+                key = "raw:" + name
+                w = np.nan_to_num(data[:, i]) / 100.0
+                # A shape on a renderer that isn't drawn yet (an outfit not worn) mustn't win.
+                if key not in out or (np.abs(w).max() > np.abs(out[key]).max()):
+                    out[key] = w
+        return out
+
+    def apply_raw_face(self) -> int:
+        """Keys the game's own blend shapes, exported as "raw:" shape keys, with the game's weights
+        every frame: blinks, pattern blends, mouth movement and every plugin's shape changes exactly.
+        Returns how many keys were driven; 0 when the bundle has no raw keys."""
+        weights = None
+        frames = _frames(self.n, self.frame_start)
+        done = 0
+        for obj in self.ch.parts():
+            if obj.type != "MESH" or obj.data.shape_keys is None:
+                continue
+            key = obj.data.shape_keys
+            raw = [kb.name for kb in key.key_blocks if kb.name.startswith("raw:")]
+            if not raw:
+                continue
+            if weights is None:
+                weights = self.raw_shape_weights()
+            if key.animation_data:
+                for d in list(key.animation_data.drivers):
+                    if d.data_path.startswith('key_blocks["raw:'):
+                        key.animation_data.drivers.remove(d)
+            curves = anim.Curves(key, f"{obj.name} face (KK2Blender)")
+            for name in raw:
+                w = weights.get(name)
+                if w is None:
+                    continue
+                curves.curve(f'key_blocks["{name}"].value', 0, frames, np.clip(w, 0.0, 1.0), group="Game shapes")
+                done += 1
+            # The finished pattern keys would add to the same shapes: they stay at 0. Tear and gag-eye
+            # keys also show their meshes (KKBP rests those inside the head), so they stay driven.
+            pattern_keys = {r.target for r in self.bundle.expressions.records
+                            if r.category in ("eye", "mouth", "eyebrow")}
+            for kb in key.key_blocks:
+                if kb.name in pattern_keys:
+                    kb.value = 0.0
+        if done:
+            self.log(f"animated {done} game blend shapes")
+            self.apply_gag_eyes()
+        return done
+
+    def apply_gag_eyes(self):
+        """With the game's shapes driving the face, KKBP's gag eyes (ADR 0042: one "Gag eyes" key, a
+        dropdown on the gag material and correction keys) still show the gag mesh, its texture and
+        hide the pupils. Their face shapes would come on top of the game's, so those keys are made
+        flat, and the key and the dropdown's number are keyed from the eye set in use."""
+        import sys
+        from . import kkbp_link
+        api = kkbp_link.api()
+        pkg = api.__name__.rpartition(".")[0]
+        gag = sys.modules.get(pkg + ".steps.gag")
+        templates = sys.modules.get(pkg + ".templates")
+        if gag is None or templates is None:
+            return
+        targets = gag.gag_expressions(self.bundle)
+        if not targets:
+            return
+        owner = next((o for o in self.ch.parts() if o.type == "MESH" and o.data.shape_keys
+                      and gag.GAG_KEY in o.data.shape_keys.key_blocks), None)
+        if owner is None:
+            return
+        # Flatten the gag key and every correction key.
+        for obj in self.ch.parts():
+            if obj.type != "MESH" or obj.data.shape_keys is None:
+                continue
+            kbs = obj.data.shape_keys.key_blocks
+            names = [gag.GAG_KEY] + list(gag.corrections(obj))
+            for name in names:
+                kb = kbs.get(name)
+                if kb is None:
+                    continue
+                base = kb.relative_key
+                co = np.empty(len(base.data) * 3, dtype=np.float32)
+                base.data.foreach_get("co", co)
+                kb.data.foreach_set("co", co)
+        # Which gag expression each frame's eye set is, by the game name KKBP recorded.
+        by_name = {}
+        for r in self.bundle.expressions.records:
+            if r.category == "gag" and r.game_name in targets or (r.target in targets and r.game_name):
+                by_name.setdefault(r.game_name, targets.index(r.target) + 1)
+        eyesets = {int(e["id"]): e for e in self.tracks.header.get("eyesets", [])}
+        current = np.nan_to_num(self.status[:, face.STATUS.index("eyeset")], nan=-1).astype(int)
+        number = np.zeros(self.n)
+        for f, eid in enumerate(current):
+            e = eyesets.get(int(eid))
+            if e is not None and int(e.get("gag", 0)) > 0:
+                number[f] = by_name.get(e.get("name"), 0)
+        on = (number > 0).astype(float)
+        frames = _frames(self.n, self.frame_start)
+        anim.Curves(owner.data.shape_keys, "").curve(f'key_blocks["{gag.GAG_KEY}"].value', 0, frames, on,
+                                                     group="Gag eyes", interpolation="CONSTANT")
+        for mat in {m for o in self.ch.parts() if o.type == "MESH" for m in o.data.materials if m}:
+            try:
+                _, number_path = templates.picker_paths(mat)
+            except Exception:
+                continue
+            if not number_path:
+                continue
+            try:
+                mat.path_resolve(number_path)
+            except ValueError:
+                continue
+            anim.Curves(mat, f"{mat.name} gag (KK2Blender)").curve(number_path, 0, frames, number,
+                                                                    group="Gag eyes", interpolation="CONSTANT")
+        self.log(f"gag eyes keyed on {int(on.sum())} frames")
+
     def apply_face(self):
+        raw = self.apply_raw_face() > 0
         records = [face.Expression(r.mesh, r.target, r.category, r.name, r.game_name)
                    for r in self.bundle.expressions.records]
+        if raw:
+            # Exact game shapes drive the face; tears still need their showing keys (gag eyes: apply_gag_eyes).
+            records = [r for r in records if r.category == "tears"]
         if not records:
             return
         header = self.tracks.header

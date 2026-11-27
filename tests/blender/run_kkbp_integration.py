@@ -67,6 +67,9 @@ def rot(axis, deg):
 
 def make_export(tmp: Path):
     builder = BundleBuilder("KK", "Test Chara")
+    # The game's own blend shapes, as our Studio exporter writes them (raw: targets, category other).
+    builder.add_expression("cf_O_face", "raw:eye_face.f00_def_cl", "other", name=None, game_name="eye_face.f00_def_cl")
+    builder.add_expression("cf_O_face", "raw:kuti_face.f00_a", "other", name=None, game_name="kuti_face.f00_a")
     bundle = builder.build(tmp / "meshes")
     bones = builder.bones
     by = {b["id"]: b for b in bones}
@@ -106,11 +109,14 @@ def make_export(tmp: Path):
     channels.append(("face:eyes", "patterns", 0, eyes, False))
     channels.append(("face:mouth", "patterns", 0, np.tile([1.0, 0.0], (FRAMES, 1)), True))
     status = np.zeros((FRAMES, 12))
-    channels.append(("status", "status", 0, status, True))
+    status[4:, 7] = 40  # heart gag eyes from frame 4
+    channels.append(("status", "status", 0, status, False))
     shirt = np.array([[1.0 if f < 3 else 0.0] for f in range(FRAMES)])
     channels.append(("vis:BodyTop/ct_clothesTop/o_top_shirt", "bool", 0, shirt, False))
     channels.append(("vis:BodyTop/ct_clothesTop/o_top_shirt_alt", "bool", 0, np.zeros((FRAMES, 1)), True))
     channels.append(("vis:BodyTop/p_cf_body_00/o_body_a", "bool", 0, np.ones((FRAMES, 1)), True))
+    blink = np.array([[100.0 * f / (FRAMES - 1), 50.0] for f in range(FRAMES)])
+    channels.append(("shape:BodyTop/p_cf_head/cf_O_face", "weights", 0, blink, False))
 
     (tmp / "tracks").mkdir()
     header = {
@@ -119,8 +125,11 @@ def make_export(tmp: Path):
             "BodyTop/ct_clothesTop/o_top_shirt": {"name": "o_top_shirt", "owner": "clothes:0"},
             "BodyTop/ct_clothesTop/o_top_shirt_alt": {"name": "o_top_shirt_alt", "owner": "clothes:0"},
             "BodyTop/p_cf_body_00/o_body_a": {"name": "o_body_a", "owner": "body"},
+            "BodyTop/p_cf_head/cf_O_face": {"name": "cf_O_face", "owner": "head",
+                                            "blend_shapes": ["eye_face.f00_def_cl", "kuti_face.f00_a"]},
         },
-        "eyesets": [{"id": 0, "name": "笑い", "pattern": 0, "gag": 0}],
+        "eyesets": [{"id": 0, "name": "笑い", "pattern": 0, "gag": 0},
+                    {"id": 40, "name": "ハート目", "pattern": 0, "gag": 3}],
     }
     write_k2t(tmp / "tracks" / "c00.k2t", FRAMES, channels, header)
     cam = [list(np.eye(4)[:3, :].reshape(12) + np.array([0, 0, 0, 0, 0, 0, 0, 1.0, 0, 0, 0, -3])) +
@@ -167,17 +176,32 @@ def main():
     print(f"checked {checked} bone-frames, worst skinning error {worst:.2e}")
     assert checked > 0 and worst < 1e-4, worst
 
-    # Expressions keyed.
+    # The game's own shapes drive the face; the finished pattern keys stay at 0.
     face = next(o for o in bpy.data.objects if o.type == "MESH" and o.data.shape_keys
-                and "Eye Happy" in o.data.shape_keys.key_blocks)
+                and "raw:eye_face.f00_def_cl" in o.data.shape_keys.key_blocks)
     kb = face.data.shape_keys.key_blocks
     scene.frame_set(1)
-    v0 = kb["Eye Happy"].value
+    v0 = kb["raw:eye_face.f00_def_cl"].value
     scene.frame_set(FRAMES)
-    v1 = kb["Eye Happy"].value
-    print("Eye Happy", v0, v1, "Mouth Default", kb["Mouth Default"].value)
+    v1 = kb["raw:eye_face.f00_def_cl"].value
+    print("raw blink", v0, v1, "raw mouth", kb["raw:kuti_face.f00_a"].value, "Eye Happy", kb["Eye Happy"].value)
     assert v0 < 0.01 and v1 > 0.99, (v0, v1)
-    assert kb["Mouth Default"].value > 0.99
+    assert abs(kb["raw:kuti_face.f00_a"].value - 0.5) < 1e-4
+    assert kb["Eye Happy"].value == 0.0 and kb["Mouth Default"].value == 0.0
+    assert any("game blend shapes" in line for line in report.lines), report.lines
+
+    # Gag eyes: on from frame 4 (Blender 5), flat (the game's shapes already move the face).
+    gk = kb.get("Gag eyes")
+    assert gk is not None
+    scene.frame_set(2)
+    assert gk.value == 0.0, gk.value
+    scene.frame_set(6)
+    assert gk.value == 1.0, gk.value
+    co = np.empty(len(gk.data) * 3)
+    gk.data.foreach_get("co", co)
+    base = np.empty(len(gk.data) * 3)
+    gk.relative_key.data.foreach_get("co", base)
+    assert np.allclose(co, base), "Gag eyes should be flat"
 
     # The shirt comes off at frame 3 (Blender frame 4).
     shirt = [o for o in bpy.data.objects if o.type == "MESH"
