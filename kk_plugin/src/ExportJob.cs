@@ -286,7 +286,15 @@ namespace KK2Blender
 
             if (plugin.ExportCharacterMeshes.Value && characters.Count > 0)
             {
-                scene.Set("kkbp", RequestKkbp(cardsDir));
+                // Character meshes as KKBP Export Bundles, written here in Studio (Character/).
+                var meshExport = new Character.CharacterMeshExport(Folder, characters, charSamplers.Select(c => c.Paths).ToList(), s => Status = s);
+                foreach (var step in meshExport.Run())
+                {
+                    yield return step;
+                }
+                var failed = meshExport.Result.Contains("failures") ? (List<object>)meshExport.Result["failures"] : null;
+                // Fallback when no character could be captured: ask KKBP's maker exporter instead.
+                scene.Set("kkbp", failed != null && failed.Count == characters.Count ? RequestKkbp(cardsDir) : meshExport.Result);
             }
             scene.Set("complete", true);
             File.WriteAllText(Path.Combine(Folder, "scene.json"), JsonWriter.Write(scene));

@@ -57,6 +57,9 @@ namespace KK2Blender
 
         public TrackSet Tracks { get { return tracks; } }
 
+        /// <summary>The bake's path names, shared with the character mesh export so both name transforms alike.</summary>
+        public PathTable Paths { get { return paths; } }
+
         public void Sample(int frame)
         {
             tracks.BeginFrame(frame);
