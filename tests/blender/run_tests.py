@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "tests" / "python"))
 
 import kk2blender  # noqa: E402
 from kk2blender import anim, build, character, lighting, pose, render_settings, space  # noqa: E402
-from conftest import write_glb_triangle, write_k2t  # noqa: E402
+from conftest import write_glb_lightmapped_quad, write_glb_triangle, write_k2t  # noqa: E402
 
 kk2blender.register()
 
@@ -222,6 +222,60 @@ def test_key_light_comes_from_upper_left():
     d = key.matrix_world.to_3x3() @ Matrix.Identity(3).col[2] * -1  # direction the light travels
     # Camera at the origin looking down -Z: light from the upper left travels right (+X) and down (-Y).
     assert d.x > 0.2 and d.y < -0.2 and d.z < 0, d
+
+
+def test_map_cameras_and_effects():
+    reset()
+    tmp = Path(tempfile.mkdtemp())
+    frames = 3
+    (tmp / "tracks").mkdir()
+    (tmp / "map").mkdir()
+    write_glb_lightmapped_quad(tmp / "map" / "part_000.glb")
+    cam = [list(rows(translate(0, 1.2, -3))) + [30.0, 0.1, 100.0, 0.0, 5.0]] * frames
+    target = [[0, 1.2, 0, 3.0 + f] for f in range(frames)]
+    scam = [list(rows(translate(2, 1, 0))) + [1.0, 0.0]] * frames
+    maprow = [list(rows(np.eye(4))) + [1.0]] * frames
+    mlight = [list(rows(np.eye(4))) + [1, 1, 1, 1.0, 5.0, 30.0, 1.0, 1.0]] * frames
+    write_k2t(tmp / "tracks" / "scene.k2t", frames, [
+        ("camera", "camera", 0, np.array(cam), True),
+        ("camera_target", "target", 0, np.array(target, dtype=float), False),
+        ("studiocam:7", "matrix_vis_active", 0, np.array(scam), True),
+        ("map", "matrix_vis", 0, np.array(maprow), True),
+        ("light:0", "light", 0, np.array(mlight), True),
+    ], {"lights": {"light:0": {"name": "Map sun", "type": "directional", "owner": "map"}}})
+    write_k2t(tmp / "tracks" / "time.k2t", frames, [("time", "seconds", 0, np.zeros((frames, 1)), False)])
+    scene = {"format": "kk2blender-scene", "version": 1, "complete": True, "screen": [1920, 1080],
+             "characters": [], "items": [],
+             "studio_cameras": [{"key": 7, "name": "Cam A", "track": "studiocam:7"}],
+             "saved_views": [{"index": 0, "matrix": list(rows(translate(0, 2, -5))), "fov": 40.0, "distance": 5.0}],
+             "map": {"no": 1, "name": "Classroom", "parts": [{"name": "floor", "file": "map/part_000.glb",
+                                                               "matrix": list(rows(np.eye(4)))}]},
+             "effects": {"dof": {"enable": True, "aperture": 0.5}, "bloom": {"enable": True, "intensity": 0.8,
+                         "threshold": 0.9, "blur": 0.5}, "vignette": {"enable": True},
+                         "fog": {"enable": True, "color": [0.5, 0.5, 0.6, 1], "height": 3, "start": 2}},
+             "bake": {"fps": 30, "frame_count": frames,
+                      "tracks": {"scene": "tracks/scene.k2t", "time": "tracks/time.k2t"}}}
+    (tmp / "scene.json").write_text(json.dumps(scene))
+    report = build.import_scene(tmp, "studio", "preview", import_characters=False)
+    s = bpy.context.scene
+    cam_obj = s.camera
+    assert cam_obj.data.dof.use_dof
+    s.frame_set(3)
+    assert abs(cam_obj.data.dof.focus_distance - 5.0) < 1e-4, cam_obj.data.dof.focus_distance
+    assert bpy.data.objects.get("Cam A") is not None and bpy.data.objects["Cam A"].type == "CAMERA"
+    view = bpy.data.objects.get("Studio view 1")
+    assert view is not None
+    assert np.allclose(view.matrix_world.translation, (0, 5, 2), atol=1e-4), view.matrix_world.translation
+    floor = next(o for o in bpy.data.objects if o.type == "MESH" and o.data.materials and
+                 o.data.materials[0].get("kk2b_lightmap"))
+    mat = floor.data.materials[0]
+    bsdf = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    assert (bsdf.inputs.get("Emission Color") or bsdf.inputs["Emission"]).is_linked
+    assert tuple(bsdf.inputs["Base Color"].default_value)[:3] == (0.0, 0.0, 0.0)
+    assert any(o.type == "LIGHT" and o.get("kk2b_owner") == "map" for o in bpy.data.objects)
+    assert s.compositing_node_group is not None
+    assert any(n.bl_idname == "CompositorNodeGlare" for n in s.compositing_node_group.nodes)
+    assert any("map" in line for line in report.lines), report.lines
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

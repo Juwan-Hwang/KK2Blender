@@ -207,3 +207,153 @@ def link_map(folder, collection, log):
         linked = inst
     log(f"map '{name}' linked from {path}")
     return linked
+
+
+def _matrix_rows_to_blender(rows) -> Matrix:
+    return Matrix(space.unity_to_blender(space.rows_to_matrices(np.asarray(rows, dtype=np.float64)[None]))[0].tolist())
+
+
+def apply_depth_of_field(camera, folder, frame_start):
+    """Studio focuses its depth of field on the point its camera orbits; the camera keeps that
+    distance per frame. The f-stop is mapped from Studio's aperture to look about as soft."""
+    dof = (folder.scene.get("effects") or {}).get("dof") or {}
+    tracks = folder.scene_tracks
+    if camera is None or not dof.get("enable") or tracks is None or "camera_target" not in tracks:
+        return
+    data = pose.fill_gaps(tracks.full("camera_target"))
+    cam = camera.data
+    cam.dof.use_dof = True
+    aperture = float(dof.get("aperture", 0.5))
+    cam.dof.aperture_fstop = float(np.clip(2.8 / max(aperture, 0.05), 0.7, 32.0))
+    distance = np.maximum(data[:, 3], 0.05)
+    cam.dof.focus_distance = float(distance[0])
+    anim.Curves(cam, "Studio Camera lens (KK2Blender)").curve(
+        "dof.focus_distance", 0, _frames(len(data), frame_start), distance, group="Lens", eps=1e-4)
+
+
+def build_studio_cameras(folder, frame_start, collection, lens):
+    """The camera objects placed in Studio, and its saved camera views, as Blender cameras; the
+    render camera stays the baked Studio view."""
+    made = []
+    tracks = folder.scene_tracks
+    for info in folder.scene.get("studio_cameras", []):
+        name = info.get("track")
+        if tracks is None or name not in tracks:
+            continue
+        data = pose.fill_gaps(tracks.full(name))
+        cd = bpy.data.cameras.new(info.get("name") or name)
+        cd.sensor_fit, cd.sensor_height, cd.lens = "VERTICAL", SENSOR_HEIGHT, lens
+        obj = bpy.data.objects.new(cd.name, cd)
+        collection.objects.link(obj)
+        m = space.unity_to_blender(space.rows_to_matrices(data[:, :12])) @ UNITY_LOOK
+        curves = anim.Curves(obj, f"{obj.name} (KK2Blender)")
+        frames = _frames(len(data), frame_start)
+        _key_transform(curves, frames, m)
+        hidden = (np.nan_to_num(data[:, 12]) < 0.5).astype(float)
+        if hidden.any():
+            curves.curve("hide_viewport", 0, frames, hidden, group="Visibility", interpolation="CONSTANT")
+        made.append(obj)
+    views = folder.scene.get("saved_views", [])
+    if views:
+        col = bpy.data.collections.new("Saved views")
+        collection.children.link(col)
+        for v in views:
+            cd = bpy.data.cameras.new(f"Studio view {v['index'] + 1}")
+            cd.sensor_fit, cd.sensor_height = "VERTICAL", SENSOR_HEIGHT
+            cd.lens = float((SENSOR_HEIGHT / 2.0) / math.tan(math.radians(np.clip(v.get("fov", 23.0), 1, 179)) / 2.0))
+            cd.dof.focus_distance = float(v.get("distance", 10.0))
+            obj = bpy.data.objects.new(cd.name, cd)
+            col.objects.link(obj)
+            obj.matrix_world = _matrix_rows_to_blender(v["matrix"]) @ Matrix(UNITY_LOOK.tolist())
+            made.append(obj)
+    return made
+
+
+def _lightmap_material(mat):
+    """A map material with a baked lightmap: Unity draws it as albedo × lightmap, unlit. Here the
+    same product goes to emission and the surface takes no other light. The lightmap holds Unity's
+    RGBM (colour × alpha × 5, in gamma space), decoded in the node tree."""
+    if mat is None or not mat.use_nodes:
+        return
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    bsdf = next((n for n in nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if bsdf is None:
+        return
+    # The glTF importer puts the occlusion image (our lightmap, on the second UV set) into its
+    # settings group; find the image node that isn't the base colour's.
+    base_link = next((l for l in links if l.to_socket == bsdf.inputs["Base Color"]), None)
+    base_image = base_link.from_node if base_link is not None else None
+    lightmap = next((n for n in nodes if n.type == "TEX_IMAGE" and n != base_image), None)
+    if lightmap is None:
+        return
+    for l in list(lightmap.outputs[0].links) + list(lightmap.outputs[1].links):
+        links.remove(l)
+    if lightmap.image is not None:
+        lightmap.image.colorspace_settings.name = "Non-Color"
+    # rgb * a * 5, then to linear (gamma 2.2).
+    mul_a = nodes.new("ShaderNodeVectorMath")
+    mul_a.operation = "SCALE"
+    links.new(lightmap.outputs["Color"], mul_a.inputs[0])
+    scale = nodes.new("ShaderNodeMath")
+    scale.operation = "MULTIPLY"
+    scale.inputs[1].default_value = 5.0
+    links.new(lightmap.outputs["Alpha"], scale.inputs[0])
+    links.new(scale.outputs[0], mul_a.inputs["Scale"])
+    gamma = nodes.new("ShaderNodeGamma")
+    gamma.inputs["Gamma"].default_value = 2.2
+    links.new(mul_a.outputs[0], gamma.inputs["Color"])
+    lit = nodes.new("ShaderNodeMix")
+    lit.data_type = "RGBA"
+    lit.blend_type = "MULTIPLY"
+    lit.inputs[0].default_value = 1.0
+    if base_link is not None:
+        links.new(base_link.from_socket, lit.inputs[6])
+    else:
+        lit.inputs[6].default_value = bsdf.inputs["Base Color"].default_value
+    links.new(gamma.outputs[0], lit.inputs[7])
+    emission = bsdf.inputs.get("Emission Color") or bsdf.inputs.get("Emission")
+    links.new(lit.outputs[2], emission)
+    bsdf.inputs["Emission Strength"].default_value = 1.0
+    if base_link is not None:
+        links.remove(base_link)
+    bsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+    if "Specular IOR Level" in bsdf.inputs:
+        bsdf.inputs["Specular IOR Level"].default_value = 0.0
+    bsdf.inputs["Roughness"].default_value = 1.0
+
+
+def build_map(folder, frame_start, collection, log):
+    """The map exported from Studio: each part's .glb under one empty that follows the baked map
+    root. Returns the empty, or None when the export has no map meshes."""
+    info = folder.scene.get("map") or {}
+    parts = info.get("parts") or []
+    if not parts:
+        return None
+    root = bpy.data.objects.new(f"Map {info.get('name', '')}".strip(), None)
+    root.empty_display_size = 0.5
+    collection.objects.link(root)
+    tracks = folder.scene_tracks
+    if tracks is not None and "map" in tracks:
+        data = pose.fill_gaps(tracks.full("map"))
+        curves = anim.Curves(root, f"{root.name} (KK2Blender)")
+        _key_transform(curves, _frames(len(data), frame_start), space.unity_to_blender(space.rows_to_matrices(data[:, :12])))
+    col = bpy.data.collections.new(root.name)
+    collection.children.link(col)
+    for part in parts:
+        path = folder.path / part["file"]
+        if not path.exists():
+            continue
+        holder = bpy.data.objects.new(part.get("name") or path.stem, None)
+        holder.empty_display_size = 0.1
+        col.objects.link(holder)
+        holder.parent = root
+        holder.matrix_parent_inverse.identity()
+        holder.matrix_basis = _matrix_rows_to_blender(part["matrix"])
+        new = _attach_model(holder, path, col)
+        for o in new:
+            if o.type == "MESH":
+                for m in o.data.materials:
+                    if m is not None and m.get("kk2b_lightmap"):
+                        _lightmap_material(m)
+    log(f"map '{info.get('name')}': {len(parts)} parts")
+    return root

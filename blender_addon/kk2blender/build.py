@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 import bpy
 
-from . import character, kkbp_link, lighting, render_settings, scenefile, staging
+from . import character, effects, kkbp_link, lighting, render_settings, scenefile, staging
 
 FRAME_START = 1
 
@@ -62,9 +62,14 @@ def import_scene(path, lighting_preset="soft", render_preset="final", import_cha
     root.children.link(stage)
 
     camera = staging.build_camera(folder.scene_tracks, FRAME_START, stage)
-    studio_lights = staging.build_lights(folder.scene_tracks, FRAME_START, stage, factor=light_factor)
+    staging.apply_depth_of_field(camera, folder, FRAME_START)
+    if camera is not None:
+        staging.build_studio_cameras(folder, FRAME_START, stage, camera.data.lens)
+    map_root = staging.build_map(folder, FRAME_START, stage, report.info)
+    owners = ("studio_light", "camera", "map") if map_root is not None else ("studio_light", "camera")
+    studio_lights = staging.build_lights(folder.scene_tracks, FRAME_START, stage, which=owners, factor=light_factor)
     staging.build_items(folder, FRAME_START, stage)
-    if map_from_library:
+    if map_root is None and map_from_library:
         staging.link_map(folder, stage, report.info)
 
     if import_characters and folder.scene.get("characters"):
@@ -93,6 +98,8 @@ def import_scene(path, lighting_preset="soft", render_preset="final", import_cha
         aspect = screen[0] / screen[1]
     lighting.apply(lighting_preset, camera, studio_lights)
     render_settings.apply(render_preset, aspect)
+    effects.apply(folder.scene.get("effects"), extra_bloom=lighting.PRESETS[lighting_preset].bloom)
+    effects.apply_ambient_occlusion(folder.scene.get("effects"))
     scene.frame_set(FRAME_START)
     report.info(f"scene built in {time.time() - started:.1f} s: {folder.frame_count} frames at {folder.fps} fps")
     return report
