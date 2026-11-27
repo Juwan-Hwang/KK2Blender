@@ -530,6 +530,10 @@ namespace KK2Blender.Character
 
         private void CaptureRenderer(Renderer r, BundlePass pass, int? outfit)
         {
+            if (r.shadowCastingMode == UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly)
+            {
+                return; // shadow-only proxies (o_shadowcaster) are never seen; in Blender they'd draw black over the skin
+            }
             var mesh = SourceMesh(r);
             string path = paths.Name(r.transform);
             if (mesh == null)
