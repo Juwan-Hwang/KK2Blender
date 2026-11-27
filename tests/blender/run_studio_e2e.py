@@ -84,6 +84,14 @@ def main():
         renderers.setdefault(m["path"], {"name": m["name"], "owner": "body"})
         channels.append(("vis:" + m["path"], "bool", 0, np.ones((FRAMES, 1)), True))
     channels.append(("status", "status", 0, np.zeros((FRAMES, 12)), True))
+    # Unity Cloth on the shirt: every vertex at a known point that moves up each frame.
+    outfit = json.loads((bundle / "outfits" / "00" / "outfit.json").read_text(encoding="utf-8"))
+    cloth_id = next(m["id"] for m in outfit["meshes"] if (m.get("extensions") or {}).get("kk", {}).get("cloth"))
+    cloth = kmap["meshes"][cloth_id]
+    cloth_verts = np.array([[(0.01 * v, 0.5 + 0.1 * f, 0.02) for v in range(cloth["vertices"])] for f in range(FRAMES)])
+    channels.append(("cloth:" + cloth["path"], "vertices", 0, cloth_verts.reshape(FRAMES, -1), False))
+    if "bone:" + cloth["path"] not in {c[0] for c in channels}:
+        channels.append(("bone:" + cloth["path"], "matrix", 0, np.tile(np.eye(4)[:3, :].reshape(12), (FRAMES, 1)), True))
     (tmp / "tracks").mkdir()
     write_k2t(tmp / "tracks" / "c00.k2t", FRAMES, channels, {"renderers": renderers, "eyesets": []})
     cam = [list(np.eye(4)[:3, :].reshape(12)) + [30.0, 0.1, 100, 0, 5]] * FRAMES
@@ -121,6 +129,23 @@ def main():
     obj = next(o for o in bpy.data.objects if o.type == "MESH" and o.data.shape_keys and key in o.data.shape_keys.key_blocks)
     sc.frame_set(FRAMES)
     assert obj.data.shape_keys.key_blocks[key].value > 0.99
+    # The cloth's vertices sit where the game's cloth put them.
+    cloth_obj = next(o for o in bpy.data.objects if o.type == "MESH" and any(m.type == "MESH_CACHE" for m in o.modifiers))
+    bone_rows = next(c for c in channels if c[0] == "bone:" + cloth["path"])[3]
+    for f in (0, FRAMES - 1):
+        sc.frame_set(1 + f)
+        dg = bpy.context.evaluated_depsgraph_get()
+        ev = cloth_obj.evaluated_get(dg)
+        me = ev.to_mesh()
+        vidx = np.empty(len(me.vertices))
+        me.attributes["_KK_VERTEX"].data.foreach_get("value", vidx)
+        m_b = space.unity_to_blender(space.rows_to_matrices(bone_rows[f if bone_rows.shape[0] > 1 else 0]))
+        for v in me.vertices[:4]:
+            u = cloth_verts[f, int(round(vidx[v.index]))]
+            want = (m_b @ np.append(space.unity_point(u), 1.0))[:3]
+            got = np.array(cloth_obj.matrix_world @ v.co)
+            assert np.allclose(got, want, atol=1e-4), (f, got, want)
+        ev.to_mesh_clear()
     print("PASS studio e2e")
 
 

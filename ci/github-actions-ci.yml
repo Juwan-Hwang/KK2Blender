@@ -65,6 +65,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
       - name: System libraries for headless Blender
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxrender1 libxxf86vm1 libxfixes3 libxi6 libxkbcommon0 libsm6 libgl1 libegl1
       - name: Cache Blender
@@ -95,6 +98,11 @@ jobs:
           unzip -q -o /tmp/wheels/pillow*.whl -d "$mods"
       - name: End-to-end Import All with KKBP
         run: KKBP_SRC=~/kkbp-src ~/blender/blender -b --python-exit-code 1 --python tests/blender/run_kkbp_integration.py
+      - name: Our own Studio bundle through Import All (needs the C# sample)
+        run: |
+          cd kk_plugin/tests && K2T_SAMPLE_DIR=/tmp/k2t dotnet test -c Release && cd ../..
+          K2T_SAMPLE_DIR=/tmp/k2t ~/blender/blender -b --python-exit-code 1 --python tests/blender/run_bundle_import.py
+          K2T_SAMPLE_DIR=/tmp/k2t ~/blender/blender -b --python-exit-code 1 --python tests/blender/run_studio_e2e.py
       - name: Build the extension zip
         run: |
           cd blender_addon/kk2blender

@@ -87,7 +87,7 @@ def import_scene(path, lighting_preset="soft", render_preset="final", import_cha
                         report.warn(f"{ch_info['name']}: KKBP: {w}")
                     tracks = folder.character_tracks(ch_info)
                     character.apply(ch, ch.bundle(), tracks, FRAME_START,
-                                    lambda text, n=ch_info["name"]: report.info(f"{n}: {text}"))
+                                    lambda text, n=ch_info["name"]: report.info(f"{n}: {text}"), folder.path)
                     report.info(f"{ch_info['name']}: done in {time.time() - t0:.1f} s")
                 except Exception as e:  # one character failing shouldn't lose the rest of the scene
                     report.warn(f"{ch_info['name']}: {e}")

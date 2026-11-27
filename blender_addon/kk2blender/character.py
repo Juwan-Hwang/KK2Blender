@@ -536,13 +536,19 @@ class CharacterBake:
                 break
 
 
-def apply(ch, bundle, tracks, frame_start, log):
+def apply(ch, bundle, tracks, frame_start, log, export_folder=None):
     bake = CharacterBake(ch, bundle, tracks, frame_start, log)
     bake.apply_bones()
     bake.apply_root()
     bake.apply_face()
     bake.apply_visibility()
     bake.apply_outfit_schedule()
+    if export_folder is not None:
+        try:
+            from . import cloth
+            cloth.apply(bake, export_folder, frame_start)
+        except Exception as e:  # cloth is a rare extra; never lose the character over it
+            log(f"cloth not applied: {e}")
     try:
         bake.apply_material_values()
     except Exception as e:
