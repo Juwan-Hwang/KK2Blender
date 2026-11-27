@@ -543,7 +543,10 @@ def apply(ch, bundle, tracks, frame_start, log, export_folder=None):
         # The baked skeleton is hundreds of bones; drawn in front they bury the character in black.
         arm.show_in_front = False
         arm.data.display_type = "STICK"
-        arm.hide_set(True)
+        try:
+            arm.hide_set(True)
+        except RuntimeError:  # not in the view layer
+            pass
     bake.apply_bones()
     bake.apply_root()
     bake.apply_face()

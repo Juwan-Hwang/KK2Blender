@@ -121,11 +121,56 @@ def build_lights(tracks, frame_start, collection, which=("studio_light", "camera
     return made
 
 
-def build_items(folder, frame_start, collection):
+RIG_SHAPE_BUNDLE = "studio/item_shape.unity3d"
+
+
+def rig_markers(folder) -> set:
+    """Keys of plain Studio shapes (spheres, cubes, ...) used as handles: hung at the end of a folder
+    chain, with nothing hung under them, in a folder tree the animation moves (a pose rig). Scene authors add them to see and grab the folders
+    a pose rig is built from; they aren't part of the picture."""
+    scene = folder.scene
+    tracks = folder.scene_tracks
+    folders = {f["key"]: f for f in scene.get("folders", []) if "key" in f}
+    parents = {i.get("parent") for i in scene.get("items", [])} | {f.get("parent") for f in folders.values()}
+    moving = {}
+
+    def animated(key):
+        if key not in moving:
+            f = folders.get(key)
+            name = f and f.get("track")
+            ok = False
+            if tracks is not None and name in tracks:
+                data = np.nan_to_num(tracks.full(name)[:, :12])
+                ok = bool(len(data) > 1 and np.ptp(data, axis=0).max() > 1e-5)
+            moving[key] = ok
+        return moving[key]
+
+    def root(key):
+        seen = set()
+        while key in folders and folders[key].get("parent") in folders and key not in seen:
+            seen.add(key)
+            key = folders[key].get("parent")
+        return key
+
+    moving_roots = {root(k) for k in folders if animated(k)}
+    out = set()
+    for item in scene.get("items", []):
+        asset = item.get("asset") or {}
+        if asset.get("bundle", "").replace("\\", "/").lower() != RIG_SHAPE_BUNDLE:
+            continue
+        if item.get("key") in parents or item.get("parent") not in folders:
+            continue
+        if root(item.get("parent")) in moving_roots:
+            out.add(item.get("key"))
+    return out
+
+
+def build_items(folder, frame_start, collection, hide_rig_markers=True):
     """Props as empties for now, keyed with their baked transform and visibility, named after the
     item and carrying its game asset (bundle and file) for the prop library to fill in."""
     tracks = folder.scene_tracks
     made = []
+    markers = rig_markers(folder) if hide_rig_markers else set()
     for item in folder.scene.get("items", []):
         name = item.get("track")
         if tracks is None or name not in tracks:
@@ -151,6 +196,14 @@ def build_items(folder, frame_start, collection):
         m = space.unity_to_blender(space.rows_to_matrices(data[:, :12]))
         curves = anim.Curves(obj, f"{obj.name} (KK2Blender)")
         _key_transform(curves, frames, m)
+        if item.get("key") in markers:
+            # A rig handle: kept (it carries the rig's motion) but hidden; unhide it in the outliner.
+            obj["kk2b_rig_marker"] = True
+            for o in [obj] + list(obj.children_recursive):
+                o.hide_render = True
+                o.hide_viewport = True
+            made.append(obj)
+            continue
         hidden = (np.nan_to_num(data[:, 12]) < 0.5).astype(float)
         if hidden.any():
             curves.curve("hide_render", 0, frames, hidden, group="Visibility", interpolation="CONSTANT")
@@ -253,6 +306,14 @@ def build_studio_cameras(folder, frame_start, collection, lens):
         curves = anim.Curves(obj, f"{obj.name} (KK2Blender)")
         frames = _frames(len(data), frame_start)
         _key_transform(curves, frames, m)
+        if item.get("key") in markers:
+            # A rig handle: kept (it carries the rig's motion) but hidden; unhide it in the outliner.
+            obj["kk2b_rig_marker"] = True
+            for o in [obj] + list(obj.children_recursive):
+                o.hide_render = True
+                o.hide_viewport = True
+            made.append(obj)
+            continue
         hidden = (np.nan_to_num(data[:, 12]) < 0.5).astype(float)
         if hidden.any():
             curves.curve("hide_viewport", 0, frames, hidden, group="Visibility", interpolation="CONSTANT")
