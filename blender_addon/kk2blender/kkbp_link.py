@@ -30,6 +30,17 @@ def available() -> bool:
         return False
 
 
+def pillow_ready() -> bool:
+    """KKBP needs Pillow before it imports anything; it installs it from its own sidebar tab."""
+    import importlib
+    for name in ("bl_ext.user_default.kkbp.pillow", "kkbp.pillow"):
+        try:
+            return bool(importlib.import_module(name).available())
+        except Exception:
+            continue
+    return True  # unknown layout: let the import report what's wrong
+
+
 # Import Options KK2Blender needs: the deform armature is what the bake drives, so no Rigify; clothing
 # is separated per material so each piece can be shown and hidden as the game did.
 IMPORT_OPTIONS = {

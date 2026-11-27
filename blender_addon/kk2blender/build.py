@@ -75,6 +75,8 @@ def import_scene(path, lighting_preset="soft", render_preset="final", import_cha
     if import_characters and folder.scene.get("characters"):
         if not kkbp_link.available():
             report.warn("KKBP isn't enabled, so characters were skipped. Install KKBP (Blender 5.2+) and import again.")
+        elif not kkbp_link.pillow_ready():
+            report.warn("KKBP needs Pillow, so characters were skipped. Click Download Pillow in the KK2Blender or KKBP sidebar tab, then import again.")
         else:
             for ch_info in folder.scene.get("characters", []):
                 bundle_path = folder.bundles.get(ch_info["id"])

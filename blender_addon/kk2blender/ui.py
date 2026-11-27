@@ -83,6 +83,9 @@ class KK2B_PT_panel(bpy.types.Panel):
         col.operator(KK2B_OT_import_all.bl_idname, icon="IMPORT")
         if not kkbp_link.available():
             col.label(text="KKBP isn't enabled: characters can't be imported", icon="ERROR")
+        elif not kkbp_link.pillow_ready():
+            col.label(text="KKBP needs Pillow before characters import", icon="ERROR")
+            col.operator("kkbp.install_pillow", icon="IMPORT")
         col.separator()
         col.label(text="Lighting")
         row = col.row(align=True)
