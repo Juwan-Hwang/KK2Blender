@@ -278,6 +278,22 @@ def test_map_cameras_and_effects():
     assert any("map" in line for line in report.lines), report.lines
 
 
+def test_toon_props():
+    reset()
+    from kk2blender import toon
+    mat = bpy.data.materials.new("m")
+    mat.use_nodes = True
+    bsdf = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    bsdf.inputs["Base Color"].default_value = (0.2, 0.4, 0.6, 1)
+    bsdf.inputs["Alpha"].default_value = 0.5
+    toon.apply(mat)
+    out = next(n for n in mat.node_tree.nodes if n.type == "OUTPUT_MATERIAL")
+    src = out.inputs["Surface"].links[0].from_node
+    assert src.type == "MIX_SHADER", src.type
+    group = next(n for n in mat.node_tree.nodes if n.type == "GROUP")
+    assert tuple(group.inputs["Color"].default_value)[:3] == tuple(bsdf.inputs["Base Color"].default_value)[:3]
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 failed = 0

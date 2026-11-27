@@ -142,7 +142,11 @@ def build_items(folder, frame_start, collection):
         collection.objects.link(obj)
         model = item.get("model")
         if model and (folder.path / model).exists():
-            _attach_model(obj, folder.path / model, collection)
+            from . import toon
+            for part in _attach_model(obj, folder.path / model, collection):
+                if part.type == "MESH":
+                    for m in part.data.materials:
+                        toon.apply(m)
         frames = _frames(len(data), frame_start)
         m = space.unity_to_blender(space.rows_to_matrices(data[:, :12]))
         curves = anim.Curves(obj, f"{obj.name} (KK2Blender)")
