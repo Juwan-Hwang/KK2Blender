@@ -20,6 +20,10 @@ namespace KK2Blender.Format
             public float AlphaCutoff = 0.5f;
             public bool DoubleSided;
             public float[] Emissive;
+            /// <summary>A baked lightmap image on the second UV set (written as occlusionTexture, texCoord 1, and named in extras).</summary>
+            public int Lightmap = -1;
+            /// <summary>How the lightmap image encodes light: "rgbm" (Unity's, range 5) or "plain".</summary>
+            public string LightmapEncoding = "rgbm";
         }
 
         public sealed class Primitive
@@ -34,6 +38,7 @@ namespace KK2Blender.Format
             public float[] Positions; // xyz per vertex
             public float[] Normals; // optional
             public float[] Uvs; // optional, uv per vertex (glTF: origin top left)
+            public float[] Uvs2; // optional second set (lightmap UVs, already scaled and offset)
             public float[] Colors; // optional rgba per vertex
             public List<Primitive> Primitives = new List<Primitive>();
         }
@@ -142,6 +147,10 @@ namespace KK2Blender.Format
                 {
                     attributes.Set("TEXCOORD_0", FloatAccessor(mesh.Uvs, 2, "VEC2", false));
                 }
+                if (mesh.Uvs2 != null)
+                {
+                    attributes.Set("TEXCOORD_1", FloatAccessor(mesh.Uvs2, 2, "VEC2", false));
+                }
                 if (mesh.Colors != null)
                 {
                     attributes.Set("COLOR_0", FloatAccessor(mesh.Colors, 4, "VEC4", false));
@@ -201,6 +210,11 @@ namespace KK2Blender.Format
                 if (m.Emissive != null)
                 {
                     mat.Set("emissiveFactor", m.Emissive);
+                }
+                if (m.Lightmap >= 0)
+                {
+                    mat.Set("occlusionTexture", new JsonObject().Set("index", m.Lightmap).Set("texCoord", 1));
+                    mat.Set("extras", new JsonObject().Set("kk2b_lightmap", m.LightmapEncoding));
                 }
                 mats.Add(mat);
             }

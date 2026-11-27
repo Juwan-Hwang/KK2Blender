@@ -62,6 +62,7 @@ namespace KK2Blender
             }
 
             plugin.ExportProps.Value = GUILayout.Toggle(plugin.ExportProps.Value, " Export props");
+            plugin.ExportMap.Value = GUILayout.Toggle(plugin.ExportMap.Value, " Export map");
             plugin.ExportCharacterMeshes.Value = GUILayout.Toggle(plugin.ExportCharacterMeshes.Value, " Prepare character meshes (KKBP)");
 
             GUI.enabled = true;

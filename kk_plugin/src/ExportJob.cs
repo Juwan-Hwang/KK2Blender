@@ -152,6 +152,20 @@ namespace KK2Blender
                 }
             }
 
+            // 1c. The map, as the game shows it now.
+            List<object> mapParts = null;
+            if (plugin.ExportMap.Value)
+            {
+                Status = "Writing the map";
+                yield return null;
+                var mapWarnings = new List<string>();
+                mapParts = MapExporter.Export(Folder, mapWarnings);
+                foreach (var w in mapWarnings)
+                {
+                    Plugin.Log.LogWarning("Map: " + w);
+                }
+            }
+
             // 2. Static description (completed after the bake).
             var scene = new JsonObject()
                 .Set("format", "kk2blender-scene")
@@ -170,7 +184,7 @@ namespace KK2Blender
                     .Set("parent", Parent(o))
                     .Set("track", "studiocam:" + o.objectInfo.dicKey)).ToList())
                 .Set("saved_views", SavedViews(studio))
-                .Set("map", DescribeMap(studio))
+                .Set("map", DescribeMap(studio, mapParts))
                 .Set("effects", DescribeEffects(studio.sceneInfo));
 
             // 3. Bake.
@@ -399,7 +413,7 @@ namespace KK2Blender
             return o.parentInfo.objectInfo.dicKey;
         }
 
-        private static JsonObject DescribeMap(Studio.Studio studio)
+        private static JsonObject DescribeMap(Studio.Studio studio, List<object> parts)
         {
             var si = studio.sceneInfo;
             if (si == null || si.map < 0)
@@ -412,7 +426,8 @@ namespace KK2Blender
                 .Set("sun", si.sunLightType)
                 .Set("position", Space.Vector(si.caMap.pos))
                 .Set("rotation", Space.Vector(si.caMap.rot))
-                .Set("track", "map");
+                .Set("track", "map")
+                .Set("parts", parts ?? new List<object>());
             var info = Singleton<Info>.Instance;
             Info.MapLoadInfo load;
             if (info != null && info.dicMapLoadInfo.TryGetValue(si.map, out load))

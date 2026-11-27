@@ -32,6 +32,7 @@ namespace KK2Blender
         internal ConfigEntry<float> FallbackSeconds;
         internal ConfigEntry<bool> ExportCharacterMeshes;
         internal ConfigEntry<bool> ExportProps;
+        internal ConfigEntry<bool> ExportMap;
         internal ConfigEntry<KeyboardShortcut> WindowKey;
 
         private ExportJob job;
@@ -57,6 +58,8 @@ namespace KK2Blender
                 "Save each character's card and ask the KKBP exporter to export them (it runs the next time the main game starts).");
             ExportProps = Config.Bind("Export", "Export props", true,
                 "Write each Studio item's meshes and simple materials, so props come into Blender with their shape and colours.");
+            ExportMap = Config.Bind("Export", "Export map", true,
+                "Write the loaded map's meshes, materials and baked lightmaps.");
             WindowKey = Config.Bind("General", "Window key", new KeyboardShortcut(KeyCode.E, KeyCode.LeftControl, KeyCode.LeftShift),
                 "Shows or hides the KK2Blender window.");
 
