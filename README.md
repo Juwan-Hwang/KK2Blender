@@ -64,11 +64,13 @@ Blender side (5.2 or later, Windows or Linux):
 Lighting presets: **Soft anime** (default), **Studio match** (Studio's own lights), **Cinematic**,
 **Daylight**. Render presets: Preview, Final (EEVEE 1080p), Final 4K, Cycles.
 
-## Known gaps in v0.1
+## Known gaps
 
-- Props come in as named, animated empties (their game asset is recorded); meshes come later.
-- When the outfit changes mid-animation, the body's skin mask (what clothes hide) stays the first outfit's.
-- Blush and skin gloss changes aren't applied; Unity Cloth (not bone-driven) clothes aren't supported.
+- Nothing here has run inside the game yet; the first in-game test is [docs/testing-plan.md](docs/testing-plan.md).
+- Props and maps use simplified materials (a KK-like toon shader for props; albedo × baked lightmap for maps).
+- Material values the game animates (blush, gloss) are keyed where KKBP's material has a matching
+  parameter; the import report lists the ones it couldn't place.
+- The light/dark texture bakes come from the game's shaders under a plain light, so they may differ a little from KKBP's.
 
 ## Testing
 
