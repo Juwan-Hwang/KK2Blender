@@ -41,6 +41,7 @@ namespace KK2Blender
         private readonly Dictionary<Renderer, Channel> visChannels = new Dictionary<Renderer, Channel>();
         private readonly Dictionary<Renderer, string> rendererPaths = new Dictionary<Renderer, string>();
         private readonly MaterialSampler materials = new MaterialSampler();
+        private readonly List<Cloth> clothBuffer = new List<Cloth>();
 
         public CharacterSampler(OCIChar oci)
         {
@@ -135,9 +136,46 @@ namespace KK2Blender
                 }
             }
 
+            SampleCloth(frame);
             SampleFace();
             SampleEyeTextures();
             SampleStatus();
+        }
+
+        /// <summary>
+        /// "cloth:&lt;path&gt;": Unity Cloth (simulated cloth, not bones) moves the mesh's vertices
+        /// directly; their positions every frame, in the cloth renderer's local space (3 floats each).
+        /// </summary>
+        private void SampleCloth(int frame)
+        {
+            clothBuffer.Clear();
+            root.GetComponentsInChildren(false, clothBuffer);
+            foreach (var cloth in clothBuffer)
+            {
+                if (!cloth.enabled)
+                {
+                    continue;
+                }
+                var v = cloth.vertices;
+                if (v == null || v.Length == 0)
+                {
+                    continue;
+                }
+                var record = new float[v.Length * 3];
+                for (int i = 0; i < v.Length; i++)
+                {
+                    record[i * 3] = v[i].x;
+                    record[i * 3 + 1] = v[i].y;
+                    record[i * 3 + 2] = v[i].z;
+                }
+                string name = "cloth:" + paths.Name(cloth.transform);
+                Channel existing;
+                if (tracks.TryGet(name, out existing) && existing.Width != record.Length)
+                {
+                    name += "@" + v.Length;
+                }
+                tracks.Get(name, "vertices", record.Length).Put(frame, record);
+            }
         }
 
         private JsonObject Describe(Renderer r)
