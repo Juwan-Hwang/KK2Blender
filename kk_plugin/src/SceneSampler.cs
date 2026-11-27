@@ -23,6 +23,7 @@ namespace KK2Blender
         private readonly TrackSet tracks = new TrackSet();
         private readonly List<OCIItem> items = new List<OCIItem>();
         private readonly List<OCIFolder> folders = new List<OCIFolder>();
+        private readonly List<OCICamera> cameras = new List<OCICamera>();
         private readonly Dictionary<OCIItem, PathTable> itemBones = new Dictionary<OCIItem, PathTable>();
         private readonly List<Light> lights = new List<Light>();
         private readonly Dictionary<Light, int> lightIds = new Dictionary<Light, int>();
@@ -48,6 +49,11 @@ namespace KK2Blender
                 if (folder != null && folder.objectItem != null)
                 {
                     folders.Add(folder);
+                }
+                var cam = o as OCICamera;
+                if (cam != null && cam.objectItem != null)
+                {
+                    cameras.Add(cam);
                 }
                 var light = o as OCILight;
                 if (light != null && light.light != null)
@@ -79,6 +85,7 @@ namespace KK2Blender
         {
             tracks.BeginFrame(frame);
             SampleCamera();
+            SampleStudioCameras();
             SampleItems();
             SampleFolders();
             SampleLights();
@@ -100,6 +107,36 @@ namespace KK2Blender
             r[15] = cam.orthographic ? 1f : 0f;
             r[16] = cam.orthographicSize;
             tracks.Put("camera", "camera", r);
+        }
+
+        /// <summary>
+        /// "camera_target": the point Studio's camera orbits and its distance to it, which is also where
+        /// Studio's depth of field focuses: target x, y, z, distance.
+        /// "studiocam:&lt;key&gt;": each camera object placed in Studio: world matrix, shown, active.
+        /// </summary>
+        private void SampleStudioCameras()
+        {
+            var studio = Singleton<Studio.Studio>.Instance;
+            if (studio != null && studio.cameraCtrl != null)
+            {
+                var data = studio.cameraCtrl.Export();
+                if (data != null)
+                {
+                    tracks.Put("camera_target", "target", new[] { data.pos.x, data.pos.y, data.pos.z, Mathf.Abs(data.distance.z) });
+                }
+            }
+            foreach (var cam in cameras)
+            {
+                if (cam.objectItem == null)
+                {
+                    continue;
+                }
+                var r = new float[14];
+                Space.Matrix(cam.objectItem.transform.localToWorldMatrix, r, 0);
+                r[12] = cam.objectItem.activeInHierarchy ? 1f : 0f;
+                r[13] = cam.cameraInfo != null && cam.cameraInfo.active ? 1f : 0f;
+                tracks.Put("studiocam:" + cam.objectInfo.dicKey, "matrix_vis_active", r);
+            }
         }
 
         private void SampleItems()
@@ -254,6 +291,7 @@ namespace KK2Blender
             return new JsonObject()
                 .Set("subject", "scene")
                 .Set("camera_layout", "matrix[12],fov_deg,near,far,orthographic,ortho_size")
+                .Set("camera_target_layout", "x,y,z,distance")
                 .Set("light_layout", "matrix[12],r,g,b,intensity,range,spot_angle,enabled,shadow_strength")
                 .Set("lights", lightInfo);
         }

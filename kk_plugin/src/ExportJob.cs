@@ -164,6 +164,12 @@ namespace KK2Blender
                 .Set("items", objects.OfType<OCIItem>().Where(o => o.objectItem != null).OrderBy(o => o.objectInfo.dicKey).Select(o => (object)Describe(o, propFiles)).ToList())
                 .Set("folders", objects.OfType<OCIFolder>().OrderBy(o => o.objectInfo.dicKey).Select(o => (object)Describe(o)).ToList())
                 .Set("studio_lights", objects.OfType<OCILight>().OrderBy(o => o.objectInfo.dicKey).Select(o => (object)Describe(o)).ToList())
+                .Set("studio_cameras", objects.OfType<OCICamera>().OrderBy(o => o.objectInfo.dicKey).Select(o => (object)new JsonObject()
+                    .Set("key", o.objectInfo.dicKey)
+                    .Set("name", o.name)
+                    .Set("parent", Parent(o))
+                    .Set("track", "studiocam:" + o.objectInfo.dicKey)).ToList())
+                .Set("saved_views", SavedViews(studio))
                 .Set("map", DescribeMap(studio))
                 .Set("effects", DescribeEffects(studio.sceneInfo));
 
@@ -416,6 +422,37 @@ namespace KK2Blender
                 o.Set("file", load.fileName);
             }
             return o;
+        }
+
+        /// <summary>
+        /// Studio's saved camera views (the numbered camera buttons), placed the way CameraControl places
+        /// its camera: rotation from the angles, position = rotation * distance + target. Matrix rows as
+        /// in the tracks, plus the field of view and the target distance.
+        /// </summary>
+        private static List<object> SavedViews(Studio.Studio studio)
+        {
+            var list = new List<object>();
+            var views = studio.sceneInfo != null ? studio.sceneInfo.cameraData : null;
+            if (views == null)
+            {
+                return list;
+            }
+            for (int i = 0; i < views.Length; i++)
+            {
+                var v = views[i];
+                if (v == null)
+                {
+                    continue;
+                }
+                var rot = Quaternion.Euler(v.rotate);
+                var pos = rot * v.distance + v.pos;
+                list.Add(new JsonObject()
+                    .Set("index", i)
+                    .Set("matrix", Space.Matrix(Matrix4x4.TRS(pos, rot, Vector3.one)))
+                    .Set("fov", v.parse)
+                    .Set("distance", Mathf.Abs(v.distance.z)));
+            }
+            return list;
         }
 
         private static JsonObject DescribeEffects(SceneInfo si)
