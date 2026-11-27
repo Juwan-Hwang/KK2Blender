@@ -39,6 +39,8 @@ namespace KK2Blender
         // Channels by object, so the per-frame loop doesn't build a channel name for every bone.
         private readonly Dictionary<Transform, Channel> boneChannels = new Dictionary<Transform, Channel>();
         private readonly Dictionary<Renderer, Channel> visChannels = new Dictionary<Renderer, Channel>();
+        private readonly Dictionary<Renderer, string> rendererPaths = new Dictionary<Renderer, string>();
+        private readonly MaterialSampler materials = new MaterialSampler();
 
         public CharacterSampler(OCIChar oci)
         {
@@ -100,12 +102,20 @@ namespace KK2Blender
                     visChannels[r] = vis;
                 }
                 vis.Put(frame, r.enabled && r.gameObject.activeInHierarchy ? 1f : 0f);
-                string path = null;
+                string path;
+                if (!rendererPaths.TryGetValue(r, out path))
+                {
+                    path = paths.Name(r.transform);
+                    rendererPaths[r] = path;
+                }
+                if (r.gameObject.activeInHierarchy)
+                {
+                    materials.Sample(tracks, frame, r, path);
+                }
 
                 var smr = r as SkinnedMeshRenderer;
                 if (smr != null && smr.sharedMesh != null && smr.sharedMesh.blendShapeCount > 0)
                 {
-                    path = paths.Name(r.transform);
                     int n = smr.sharedMesh.blendShapeCount;
                     var weights = new float[n];
                     for (int i = 0; i < n; i++)
@@ -387,7 +397,8 @@ namespace KK2Blender
                 .Set("eyesets", Eyesets())
                 .Set("renderers", renderers)
                 .Set("face", facePatterns)
-                .Set("eye_textures", eyeTextures);
+                .Set("eye_textures", eyeTextures)
+                .Set("materials", materials.Header());
         }
     }
 }
