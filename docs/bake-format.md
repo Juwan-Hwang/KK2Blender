@@ -9,7 +9,9 @@ kk2b_<yyyyMMdd_HHmmss>/
   tracks/c00.k2t    per-frame data of character c00
   tracks/scene.k2t  per-frame data of everything else
   tracks/time.k2t   the Timeline time of each frame
-  meshes/           KKBP bundles, written when the main game next starts
+  meshes/           KKBP bundles of the characters
+  props/item_N.glb  each Studio item's meshes and materials, in the item's space
+  map/part_NNN.glb  the map's meshes with baked lightmaps (UV1, Unity RGBM)
 ```
 
 ## Space
@@ -56,6 +58,8 @@ exist (an outfit rebuilt) hold NaN.
 | `status` | 12 | see `status_layout`: coordinate, blush, tears level, skin gloss, nipple, eyes open max, mouth open max, eye set, mouth pattern, eyebrow pattern, eye look, neck look |
 | `clothes` | 8 | clothing state per slot (0 on, 1 and 2 partly off, 3 off) |
 | `acc_show` | 20 | accessory shown per slot |
+| `mat:<path>:<slot>` | varies | the material values the game changes: colours (4), floats (1), vectors (4), textures (name index, offset xy, scale xy), in the order the header's `materials` entry lists |
+| `cloth:<path>` | 3 × vertices | Unity Cloth vertex positions, local to the cloth renderer |
 
 `<path>` is the transform's path below the character root, names joined by `/`; a second sibling
 with the same path gets `#2`. Header fields: `renderers` (per path: renderer name, owner such as
@@ -67,6 +71,8 @@ with the same path gets `#2`. Header fields: `renderers` (per path: renderer nam
 | Channel | Width | Record |
 | --- | --- | --- |
 | `camera` | 17 | world matrix, vertical FOV (degrees), near, far, orthographic, orthographic size |
+| `camera_target` | 4 | the point Studio's camera orbits (x, y, z) and the distance to it (depth of field focus) |
+| `studiocam:<key>` | 14 | a camera object placed in Studio: world matrix, shown, active |
 | `item:<key>` | 13 | Studio item world matrix, shown |
 | `item:<key>:bone:<path>` | 12 | bones of animated or skinned items, item-relative |
 | `folder:<key>` | 13 | Studio folder world matrix, shown |
@@ -86,7 +92,9 @@ character light, `map`, `other`) and Studio key.
 | `characters` | id, Studio key, name, sex, parent, card, tracks, coordinate count, coordinate at export |
 | `items` | key, name, parent, track, group/category/no, colours, alpha, game asset (bundle, file) |
 | `folders`, `studio_lights` | Studio's own settings for those |
-| `map` | number, name, asset, option, sun (time of day), position, rotation |
+| `map` | number, name, asset, option, sun (time of day), position, rotation, `parts` (each `map/part_NNN.glb` with its matrix relative to the map root) |
+| `studio_cameras` | key, name, parent, track of each camera object |
+| `saved_views` | Studio's saved camera views: index, matrix, fov, target distance |
 | `effects` | Studio's scene effects: AO, bloom, DOF, fog, vignette, sun shafts, ramp, line width, character light |
 | `bake` | fps, frame_count, duration, source (`timeline` or `fixed_length`), settle time, track files |
 | `kkbp` | where the KKBP request and result are, and its state |
