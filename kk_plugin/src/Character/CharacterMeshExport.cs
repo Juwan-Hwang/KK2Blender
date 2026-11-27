@@ -20,6 +20,8 @@ namespace KK2Blender.Character
         private readonly IList<OCIChar> characters;
         private readonly IList<PathTable> paths;
         private readonly Action<string> status;
+        /// <summary>Per character, the outfits to export (null: all).</summary>
+        public IList<ICollection<int>> Outfits;
 
         public CharacterMeshExport(string exportFolder, IList<OCIChar> characters, IList<PathTable> paths, Action<string> status)
         {
@@ -46,6 +48,7 @@ namespace KK2Blender.Character
                 status(label);
                 var capture = new CharacterCapture(oci, paths != null && i < paths.Count ? paths[i] : null);
                 capture.Status = s => status(label + ": " + s);
+                capture.Outfits = Outfits != null && i < Outfits.Count ? Outfits[i] : null;
                 IEnumerator steps = capture.Run();
                 Exception error = null;
                 while (true)

@@ -31,6 +31,7 @@ namespace KK2Blender
         internal ConfigEntry<float> SettleSeconds;
         internal ConfigEntry<float> FallbackSeconds;
         internal ConfigEntry<bool> ExportCharacterMeshes;
+        internal ConfigEntry<bool> ExportAllOutfits;
         internal ConfigEntry<bool> ExportProps;
         internal ConfigEntry<bool> ExportMap;
         internal ConfigEntry<KeyboardShortcut> WindowKey;
@@ -55,7 +56,9 @@ namespace KK2Blender
                 new ConfigDescription("How long to record when the scene has no Timeline animation (Studio poses and animations still play).",
                     new AcceptableValueRange<float>(0.1f, 600f)));
             ExportCharacterMeshes = Config.Bind("Export", "Prepare character meshes", true,
-                "Save each character's card and ask the KKBP exporter to export them (it runs the next time the main game starts).");
+                "Write each character's meshes, textures and shape keys as a KKBP Export Bundle.");
+            ExportAllOutfits = Config.Bind("Export", "Export all outfits", false,
+                "Off: only the outfits the scene uses (the current one and any the animation switches to). On: every outfit on the card.");
             ExportProps = Config.Bind("Export", "Export props", true,
                 "Write each Studio item's meshes and simple materials, so props come into Blender with their shape and colours.");
             ExportMap = Config.Bind("Export", "Export map", true,

@@ -288,6 +288,10 @@ namespace KK2Blender
             {
                 // Character meshes as KKBP Export Bundles, written here in Studio (Character/).
                 var meshExport = new Character.CharacterMeshExport(Folder, characters, charSamplers.Select(c => c.Paths).ToList(), s => Status = s);
+                if (!plugin.ExportAllOutfits.Value)
+                {
+                    meshExport.Outfits = charSamplers.Select(c => (ICollection<int>)c.UsedCoordinates).ToList();
+                }
                 foreach (var step in meshExport.Run())
                 {
                     yield return step;

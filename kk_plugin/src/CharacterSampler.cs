@@ -60,6 +60,9 @@ namespace KK2Blender
         /// <summary>The bake's path names, shared with the character mesh export so both name transforms alike.</summary>
         public PathTable Paths { get { return paths; } }
 
+        /// <summary>The coordinates (outfits) this character wore at any sampled frame.</summary>
+        public readonly HashSet<int> UsedCoordinates = new HashSet<int>();
+
         public void Sample(int frame)
         {
             tracks.BeginFrame(frame);
@@ -368,6 +371,7 @@ namespace KK2Blender
             {
                 return;
             }
+            UsedCoordinates.Add(s.coordinateType);
             tracks.Put("status", "status", new[]
             {
                 (float)s.coordinateType, s.hohoAkaRate, (float)s.tearsLv, s.skinTuyaRate, s.nipStandRate,

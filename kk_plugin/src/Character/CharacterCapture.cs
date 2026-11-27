@@ -117,6 +117,8 @@ namespace KK2Blender.Character
         }
 
         public bool Bake = true;
+        /// <summary>The outfits to export; null exports every outfit on the card. The current one is always added.</summary>
+        public ICollection<int> Outfits;
         public Action<string> Status = s => { };
 
         // --- the run ------------------------------------------------------------------------------
@@ -155,6 +157,11 @@ namespace KK2Blender.Character
 
                     for (int c = 0; c < coordinates; c++)
                     {
+                        if (Outfits != null && c != startCoordinate && !Outfits.Contains(c))
+                        {
+                            bundle.AllOutfits = false;
+                            continue;
+                        }
                         Status("outfit " + (c + 1) + "/" + coordinates);
                         if (cha.fileStatus.coordinateType != c)
                         {
