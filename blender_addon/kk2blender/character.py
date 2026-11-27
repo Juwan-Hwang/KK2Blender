@@ -31,6 +31,26 @@ class CharacterBake:
         status = tracks.full("status") if "status" in tracks else np.zeros((self.n, len(face.STATUS)))
         self.status = status
         self.coordinate = np.nan_to_num(status[:, 0], nan=-1).round().astype(int)
+        self.map = self._load_map()
+
+    def _load_map(self) -> dict:
+        """kk2blender.json, which bundles written by our Studio exporter carry: bundle Id -> the
+        game transform path of each bone, mesh and material, so matching to the bake is exact.
+        KKBP's own bundles don't have it; then names are matched (matching.py)."""
+        import json
+        path = getattr(self.bundle, "path", None)
+        if path is None:
+            return {}
+        f = path / "kk2blender.json"
+        if not f.exists():
+            return {}
+        try:
+            return json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def mapped(self, kind: str) -> dict:
+        return self.map.get(kind) or {}
 
     # --- bones -------------------------------------------------------------------------------
 
@@ -49,7 +69,13 @@ class CharacterBake:
                 allowed[b.name] = {p for p, pr in present.items() if (pr & worn).any()}
         skeleton = self.bundle.skeleton
         bones = [(b.id, b.name, b.parent) for b in skeleton.bones if b.id in arm.data.bones]
-        matches = matching.match_bones(bones, bone_paths, allowed)
+        known = self.mapped("bones")
+        if known:
+            present_paths = set(bone_paths)
+            matches = {bid: matching.Match(known[bid]["path"]) for bid, _, _ in bones
+                       if bid in known and known[bid].get("path") in present_paths}
+        else:
+            matches = matching.match_bones(bones, bone_paths, allowed)
         ambiguous = [bid for bid, m in matches.items() if m.ambiguous]
         if ambiguous:
             self.log(f"{len(ambiguous)} bones matched one of several same-named transforms: {', '.join(ambiguous[:8])}")
@@ -240,13 +266,45 @@ class CharacterBake:
                                                                     group="Gag eyes", interpolation="CONSTANT")
         self.log(f"gag eyes keyed on {int(on.sum())} frames")
 
+    def apply_showing_keys(self, records):
+        known = self.mapped("meshes")
+        frames = _frames(self.n, self.frame_start)
+        weights = {}
+        for r in records:
+            if r.category != "tears" or r.name is None:
+                continue
+            path = known.get(r.mesh, {}).get("path")
+            if path is None or "vis:" + path not in self.tracks:
+                continue
+            weights[r.target] = np.nan_to_num(self.tracks.full("vis:" + path)[:, 0])
+        if not weights:
+            # A bundle without the map: tear level 1..3 picks KKBP's tear keys in order.
+            weights = face.tear_weights(self.status, records, next((r.mesh for r in records if r.category == "tears"), ""))
+        done = 0
+        for obj in self.ch.parts():
+            if obj.type != "MESH" or obj.data.shape_keys is None:
+                continue
+            key = obj.data.shape_keys
+            names = [kb.name for kb in key.key_blocks if kb.name in weights]
+            if not names:
+                continue
+            curves = anim.Curves(key, "")
+            for name in names:
+                curves.curve(f'key_blocks["{name}"].value', 0, frames, weights[name], group="Showing",
+                             interpolation="CONSTANT")
+                done += 1
+        if done:
+            self.log(f"keyed {done} tear showing keys")
+
     def apply_face(self):
         raw = self.apply_raw_face() > 0
         records = [face.Expression(r.mesh, r.target, r.category, r.name, r.game_name)
                    for r in self.bundle.expressions.records]
         if raw:
-            # Exact game shapes drive the face; tears still need their showing keys (gag eyes: apply_gag_eyes).
-            records = [r for r in records if r.category == "tears"]
+            # Exact game shapes drive the face. Tear meshes rest inside the head; their showing key
+            # follows whether the game draws the mesh (gag eyes: apply_gag_eyes).
+            self.apply_showing_keys(records)
+            return
         if not records:
             return
         header = self.tracks.header
@@ -293,9 +351,11 @@ class CharacterBake:
         for path, info in renderers.items():
             by_leaf.setdefault(info.get("name") or path.rsplit("/", 1)[-1], []).append(path)
         out = {}
+        known = self.mapped("meshes")
         for p in self.bundle.passes:
             for mesh in p.meshes:
-                paths = by_leaf.get(mesh.name, [])
+                exact = known.get(mesh.id, {}).get("path")
+                paths = [exact] if exact else by_leaf.get(mesh.name, [])
                 if not paths:
                     continue
                 vis = np.zeros(self.n, dtype=bool)
@@ -382,7 +442,9 @@ class CharacterBake:
         keyed, unmatched = 0, set()
         for mat in {m for o in self.ch.parts() if o.type == "MESH" for m in o.data.materials if m}:
             gname = game_name_of.get(mat.get(ID))
-            channels = by_game_name.get(gname, []) + by_game_name.get(f"{gname} (Instance)", [])
+            where = self.mapped("materials").get(mat.get(ID), {})
+            exact = f"mat:{where.get('path')}:{where.get('slot')}" if where.get("path") else None
+            channels = [exact] if exact in info else by_game_name.get(gname, []) + by_game_name.get(f"{gname} (Instance)", [])
             if not channels:
                 continue
             ch_name = channels[0]
