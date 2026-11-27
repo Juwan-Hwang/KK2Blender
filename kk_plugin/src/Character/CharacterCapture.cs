@@ -599,11 +599,18 @@ namespace KK2Blender.Character
             var smrBones = smr != null ? smr.bones : null;
             var weights = mesh.boneWeights;
             var bind = mesh.bindposes;
-            if (smr != null && smrBones != null && smrBones.Length > 0 && weights != null && weights.Length == n && bind != null && bind.Length >= smrBones.Length)
+            // Uncensor and other body mods swap meshes at runtime and don't always keep the bones array
+            // and the bind poses the same length; the bones past the bind poses can't carry weight.
+            int boneCount = smrBones != null && bind != null ? Math.Min(smrBones.Length, bind.Length) : 0;
+            if (smr != null && boneCount > 0 && weights != null && weights.Length == n)
             {
-                skin.BoneKeys = new string[smrBones.Length];
-                skin.Bindposes = new Affine[smrBones.Length];
-                for (int j = 0; j < smrBones.Length; j++)
+                if (smrBones.Length != bind.Length)
+                {
+                    warnings.Add(path + ": " + smrBones.Length + " bones but " + bind.Length + " bind poses; skinned with the first " + boneCount);
+                }
+                skin.BoneKeys = new string[boneCount];
+                skin.Bindposes = new Affine[boneCount];
+                for (int j = 0; j < boneCount; j++)
                 {
                     string key = KeyOf(smrBones[j], outfit);
                     skin.BoneKeys[j] = key != null && bones.ContainsKey(key) ? key : null;
@@ -619,6 +626,14 @@ namespace KK2Blender.Character
                     skin.Joints[i * 4 + 2] = w.boneIndex2; skin.Weights[i * 4 + 2] = w.weight2;
                     skin.Joints[i * 4 + 3] = w.boneIndex3; skin.Weights[i * 4 + 3] = w.weight3;
                 }
+                for (int i = 0; i < skin.Joints.Length; i++)
+                {
+                    if (skin.Joints[i] < 0 || skin.Joints[i] >= boneCount)
+                    {
+                        skin.Joints[i] = 0;
+                        skin.Weights[i] = 0f;
+                    }
+                }
                 bm.BoneKeys = skin.BoneKeys;
                 bm.Joints = skin.Joints;
                 bm.Weights = skin.Weights;
@@ -629,6 +644,12 @@ namespace KK2Blender.Character
                 {
                     warnings.Add(path + ": its transform isn't a bone; it was left out");
                     return;
+                }
+                if (smr != null)
+                {
+                    warnings.Add(path + ": skinned, but its skin couldn't be read (" + (smrBones == null ? 0 : smrBones.Length) + " bones, " +
+                        (bind == null ? 0 : bind.Length) + " bind poses, " + (weights == null ? 0 : weights.Length) + " weights for " + n +
+                        " vertices); it follows its own transform only");
                 }
                 skin.Rigid = true;
                 bm.BoneKeys = new[] { skin.RendererKey };
