@@ -18,14 +18,15 @@ CharaStudio                      export folder                     Blender 5.2+
                                   faces, outfits, props,           ├─ bones, expressions, outfit
                                   lights, camera)                  │  visibility, eye looks keyed
              ──► scene.json      (what is in the scene)            ├─ camera, lights, props, map
-Koikatu.exe (once, automatic)                                      ├─ lighting preset
-  KKBP exporter ──► meshes/      (each character, all outfits)     └─ render preset
+             ──► meshes/         (KKBP bundle per character,       ├─ lighting preset
+                                  all outfits)                     └─ render preset
 ```
 
 The plugin doesn't re-implement the game: it plays the scene with a fixed frame rate and records the
 game's own result every frame (the same idea as VideoExport, without rendering images). Physics,
 IK, KKPE, ABMX, joint corrections and expressions are all captured as the game computed them.
-Character meshes, materials and shaders come from [KKBP](https://github.com/kkbp-dev/kkbp).
+Character meshes are written in Studio as [KKBP](https://github.com/kkbp-dev/kkbp) Export Bundles by our
+own exporter, and KKBP imports them with its materials and shaders ([docs/character-bundles.md](docs/character-bundles.md)).
 
 Details: [docs/design.md](docs/design.md), file format: [docs/bake-format.md](docs/bake-format.md).
 
@@ -34,8 +35,9 @@ Details: [docs/design.md](docs/design.md), file format: [docs/bake-format.md](do
 Game side (Windows, KK with HF Patch):
 
 1. `KK2Blender.Studio.dll` into `Koikatu\BepInEx\plugins\KK2Blender\`.
-2. KKBP's exporter `KKBP.Exporter.KK.dll` (from the `kkbp-exporters-*.zip` of a
-   [KKBP release](https://github.com/kkbp-dev/kkbp/releases)) into `Koikatu\BepInEx\plugins\KKBP\`.
+2. Optional: KKBP's exporter `KKBP.Exporter.KK.dll` (from the `kkbp-exporters-*.zip` of a
+   [KKBP release](https://github.com/kkbp-dev/kkbp/releases)) into `Koikatu\BepInEx\plugins\KKBP\`. Only
+   used as a fallback when no character could be exported in Studio.
 
 Blender side (5.2 or later, Windows or Linux):
 
@@ -48,10 +50,9 @@ Blender side (5.2 or later, Windows or Linux):
 
 1. In CharaStudio, open the scene, click the KK2Blender toolbar button (or Ctrl+Shift+E) and press
    **Export All**. It records the Timeline (or a set length without one) at the chosen frame rate.
-2. Start the main game once (the window has a button for it). KKBP exports every character of the
-   export, with all outfits, and the game closes by itself.
-3. In Blender: File > Import > KK2Blender scene, pick the export's `scene.json`.
-4. Render, or headless:
+   The character meshes (every outfit) are written at the end, in Studio.
+2. In Blender: File > Import > KK2Blender scene, pick the export's `scene.json`.
+3. Render, or headless:
 
    ```
    blender -b --python render/render.py -- --import <export folder> --preset final --lighting soft
@@ -66,7 +67,6 @@ Lighting presets: **Soft anime** (default), **Studio match** (Studio's own light
 ## Known gaps in v0.1
 
 - Props come in as named, animated empties (their game asset is recorded); meshes come later.
-- Male characters may fail KKBP's export, which runs in the female maker.
 - When the outfit changes mid-animation, the body's skin mask (what clothes hide) stays the first outfit's.
 - Blush and skin gloss changes aren't applied; Unity Cloth (not bone-driven) clothes aren't supported.
 
