@@ -22,6 +22,7 @@ namespace KK2Blender.Format.Bundle
         private readonly IdTable boneIds = new IdTable("bone");
         private readonly IdTable meshIds = new IdTable("mesh");
         private readonly IdTable materialIds = new IdTable("mat");
+        private readonly Dictionary<string, int> ordinals = new Dictionary<string, int>();
         private readonly Dictionary<object, string> textureFiles = new Dictionary<object, string>();
         private string root;
         private CharacterBundle bundle;
@@ -240,6 +241,7 @@ namespace KK2Blender.Format.Bundle
                         throw new InvalidOperationException("Mesh key " + mesh.Key + " appears twice");
                     }
                     meshIds.Make(mesh.Key, mesh.Name);
+                    ordinals[mesh.Key] = ordinals.Count;
                 }
             }
 
@@ -387,6 +389,13 @@ namespace KK2Blender.Format.Bundle
                     gm.Uvs.Add(flipped);
                 }
                 gm.Colors = mesh.Colors;
+                var source = SourceVertices(mesh);
+                gm.Ordinal = ordinals[mesh.Key];
+                gm.SourceIndex = new float[n];
+                for (int i = 0; i < n; i++)
+                {
+                    gm.SourceIndex[i] = source[i];
+                }
                 Skin(mesh, index, gm);
                 foreach (var p in mesh.Primitives)
                 {
@@ -598,6 +607,7 @@ namespace KK2Blender.Format.Bundle
                     .Set("name", mesh.Name)
                     .Set("pass", pass.Kind == "body" ? "body" : "outfit" + pass.Outfit.Value.ToString("00", CultureInfo.InvariantCulture))
                     .Set("vertices", mesh.VertexCount)
+                    .Set("ordinal", ordinals[mesh.Key])
                     .Set("blend_shapes", mesh.BlendShapes);
                 foreach (string k in mesh.Info.Keys)
                 {

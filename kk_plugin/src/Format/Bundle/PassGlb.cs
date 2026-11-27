@@ -44,6 +44,10 @@ namespace KK2Blender.Format.Bundle
             public float[] Tangents;
             public List<float[]> Uvs = new List<float[]>();
             public float[] Colors;
+            /// <summary>Optional: each vertex's index in the game mesh, as the custom attribute _KK_VERTEX.</summary>
+            public float[] SourceIndex;
+            /// <summary>Optional: the mesh's number in the bundle, as _KK_MESH (meshes KKBP joins stay apart).</summary>
+            public int Ordinal = -1;
             public int[] Joints; // 4 per vertex, skin joint indices
             public float[] Weights; // 4 per vertex
             public List<Primitive> Primitives = new List<Primitive>();
@@ -176,6 +180,19 @@ namespace KK2Blender.Format.Bundle
             if (mesh.Colors != null)
             {
                 attributes.Set("COLOR_0", Floats(mesh.Colors, 4, "VEC4", false, 34962));
+            }
+            if (mesh.SourceIndex != null)
+            {
+                attributes.Set("_KK_VERTEX", Floats(mesh.SourceIndex, 1, "SCALAR", false, 34962));
+            }
+            if (mesh.Ordinal >= 0)
+            {
+                var ordinal = new float[n];
+                for (int i = 0; i < n; i++)
+                {
+                    ordinal[i] = mesh.Ordinal;
+                }
+                attributes.Set("_KK_MESH", Floats(ordinal, 1, "SCALAR", false, 34962));
             }
             int maxJoint = 0;
             foreach (int j in mesh.Joints)
