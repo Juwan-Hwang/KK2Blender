@@ -7,7 +7,7 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../src/Format/*.cs" />
+    <Compile Include="../src/Format/**/*.cs" />
     <Compile Include="*.cs" />
   </ItemGroup>
   <ItemGroup>
