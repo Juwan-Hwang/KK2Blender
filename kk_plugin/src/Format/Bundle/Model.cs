@@ -93,6 +93,9 @@ namespace KK2Blender.Format.Bundle
         public string Shader = "";
         public string Role;
         public string BlendMode = "opaque";
+        /// <summary>The renderer path and material slot it was captured from, for the map file.</summary>
+        public string Path;
+        public int Slot = -1;
         public readonly List<KeyValuePair<string, float[]>> Colors = new List<KeyValuePair<string, float[]>>();
         public readonly List<KeyValuePair<string, float>> Floats = new List<KeyValuePair<string, float>>();
         public readonly List<KeyValuePair<string, float[]>> Vectors = new List<KeyValuePair<string, float[]>>();

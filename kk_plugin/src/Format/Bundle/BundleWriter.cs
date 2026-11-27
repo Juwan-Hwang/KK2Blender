@@ -81,6 +81,12 @@ namespace KK2Blender.Format.Bundle
                 File.WriteAllBytes(Path.Combine(root, "card.png"), bundle.Card);
             }
             map.Set("meshes", mapMeshes);
+            var mapMaterials = new JsonObject();
+            foreach (var m in bundle.Materials)
+            {
+                mapMaterials.Set(materialIds.Get(m.Key), new JsonObject().Set("path", m.Path).Set("slot", m.Slot).Set("name", m.Name));
+            }
+            map.Set("materials", mapMaterials);
             foreach (DictionaryEntryPair kv in Pairs(bundle.MapExtras))
             {
                 map.Set(kv.Key, kv.Value);
