@@ -6,7 +6,7 @@ import bpy
 import numpy as np
 from mathutils import Matrix
 
-from . import anim, face, k2t, matching, pose, space
+from . import anim, face, k2t, matching, pose, space, visibility
 
 OUTFIT = "kkbp_outfit"  # KKBP's custom property: the Outfit an object or bone belongs to
 ID = "kkbp_id"  # KKBP's custom property: a material's bundle Id
@@ -264,7 +264,8 @@ class CharacterBake:
                 continue
             anim.Curves(mat, f"{mat.name} gag (KK2Blender)").curve(number_path, 0, frames, number,
                                                                     group="Gag eyes", interpolation="CONSTANT")
-        self.log(f"gag eyes keyed on {int(on.sum())} frames")
+        if on.any():
+            self.log(f"gag eyes keyed on {int(on.sum())} frames")
 
     def apply_showing_keys(self, records):
         known = self.mapped("meshes")
@@ -381,14 +382,19 @@ class CharacterBake:
                     material_vis[mat] = material_vis.get(mat, np.zeros(self.n, dtype=bool)) | mesh_vis[mesh.id]
         frames = _frames(self.n, self.frame_start)
         keyed = 0
+        parts_hidden: dict = {}  # material -> (frames,) bool hidden while its object shows
         for obj in self.ch.parts():
             if obj.type != "MESH":
                 continue
-            ids = {m.get(ID) for m in obj.data.materials if m is not None and m.get(ID)}
-            known = [material_vis[i] for i in ids if i in material_vis]
-            if not known:
+            by_id = {m.get(ID): m for m in obj.data.materials if m is not None and m.get(ID)}
+            visible, parts = visibility.object_and_parts(list(by_id), material_vis, self.n)
+            if visible is None:
                 continue
-            visible = np.logical_or.reduce(known)
+            # A mesh the game hides while others in the same object show (KKBP joins the Body Pass into
+            # one object) is hidden by its material's Hidden parameter.
+            for mid, mask in parts.items():
+                mat = by_id[mid]
+                parts_hidden[mat] = parts_hidden.get(mat, np.zeros(self.n, dtype=bool)) | mask
             if visible.all():
                 continue
             hidden = (~visible).astype(np.float64)
@@ -397,6 +403,40 @@ class CharacterBake:
             curves.curve("hide_viewport", 0, frames, hidden, group="Visibility", interpolation="CONSTANT")
             keyed += 1
         self.log(f"keyed visibility on {keyed} objects")
+        if parts_hidden:
+            self.apply_hidden_materials(parts_hidden)
+
+    def apply_hidden_materials(self, hidden: dict):
+        """Keys KKBP's Hidden parameter on materials whose mesh the game didn't draw on some frames."""
+        import sys
+        from . import kkbp_link
+        try:
+            pkg = kkbp_link.api().__name__.rpartition(".")[0]
+        except kkbp_link.KkbpMissing:
+            return
+        templates = sys.modules.get(pkg + ".templates")
+        if templates is None:
+            return
+        frames = _frames(self.n, self.frame_start)
+        done, unable = [], []
+        for mat, mask in hidden.items():
+            try:
+                socket = templates.param(mat, "hidden")
+            except Exception:
+                unable.append(mat.name)
+                continue
+            values = mask.astype(np.float64)
+            if np.all(values == values[0]):
+                socket.default_value = float(values[0])
+            else:
+                anim.Curves(socket.id_data, f"{socket.id_data.name} hidden (KK2Blender)").curve(
+                    socket.path_from_id() + ".default_value", 0, frames, values, group="Visibility",
+                    interpolation="CONSTANT")
+            done.append(mat.name)
+        if done:
+            self.log(f"hid {len(done)} materials while the game didn't draw their mesh: {', '.join(sorted(done)[:8])}")
+        if unable:
+            self.log(f"materials the game hid but KKBP can't hide: {', '.join(sorted(unable)[:8])}")
 
     def apply_outfit_schedule(self):
         """Keys the outfit worn on each frame on the armature, for the body textures (outfits.py)."""
@@ -547,6 +587,11 @@ def apply(ch, bundle, tracks, frame_start, log, export_folder=None):
             arm.hide_set(True)
         except RuntimeError:  # not in the view layer
             pass
+    try:
+        from . import outlines
+        outlines.apply(ch, log)
+    except Exception as e:  # a look fix; never lose the character over it
+        log(f"outlines not fixed: {e}")
     bake.apply_bones()
     bake.apply_root()
     bake.apply_face()

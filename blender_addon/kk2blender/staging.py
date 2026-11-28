@@ -121,48 +121,7 @@ def build_lights(tracks, frame_start, collection, which=("studio_light", "camera
     return made
 
 
-RIG_SHAPE_BUNDLE = "studio/item_shape.unity3d"
-
-
-def rig_markers(folder) -> set:
-    """Keys of plain Studio shapes (spheres, cubes, ...) used as handles: hung at the end of a folder
-    chain, with nothing hung under them, in a folder tree the animation moves (a pose rig). Scene authors add them to see and grab the folders
-    a pose rig is built from; they aren't part of the picture."""
-    scene = folder.scene
-    tracks = folder.scene_tracks
-    folders = {f["key"]: f for f in scene.get("folders", []) if "key" in f}
-    parents = {i.get("parent") for i in scene.get("items", [])} | {f.get("parent") for f in folders.values()}
-    moving = {}
-
-    def animated(key):
-        if key not in moving:
-            f = folders.get(key)
-            name = f and f.get("track")
-            ok = False
-            if tracks is not None and name in tracks:
-                data = np.nan_to_num(tracks.full(name)[:, :12])
-                ok = bool(len(data) > 1 and np.ptp(data, axis=0).max() > 1e-5)
-            moving[key] = ok
-        return moving[key]
-
-    def root(key):
-        seen = set()
-        while key in folders and folders[key].get("parent") in folders and key not in seen:
-            seen.add(key)
-            key = folders[key].get("parent")
-        return key
-
-    moving_roots = {root(k) for k in folders if animated(k)}
-    out = set()
-    for item in scene.get("items", []):
-        asset = item.get("asset") or {}
-        if asset.get("bundle", "").replace("\\", "/").lower() != RIG_SHAPE_BUNDLE:
-            continue
-        if item.get("key") in parents or item.get("parent") not in folders:
-            continue
-        if root(item.get("parent")) in moving_roots:
-            out.add(item.get("key"))
-    return out
+from .rigs import RIG_SHAPE_BUNDLE, rig_markers  # noqa: E402,F401  (kept here for callers)
 
 
 def build_items(folder, frame_start, collection, hide_rig_markers=True):
@@ -253,9 +212,7 @@ def _apply_item_skins(folder, item, track, parts, frame_start):
         g = pts[:, index, :]
         # glTF (Y up) to Blender (Z up), the way the glTF importer converts the mesh itself.
         b = np.stack([g[..., 0], -g[..., 2], g[..., 1]], axis=-1).astype(np.float32)
-        cache_dir.mkdir(exist_ok=True)
-        path = cache_dir / f"{bpy.path.clean_name(part.name)}_{item.get('key')}.pc2"
-        cloth.write_pc2(path, b, float(frame_start))
+        path = cloth.write_cache(cache_dir, f"{bpy.path.clean_name(part.name)}_{item.get('key')}.pc2", b, float(frame_start))
         mod = part.modifiers.new("KK2Blender motion", "MESH_CACHE")
         mod.cache_format = "PC2"
         mod.filepath = str(path)

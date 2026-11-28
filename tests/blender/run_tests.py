@@ -294,6 +294,29 @@ def test_toon_props():
     assert tuple(group.inputs["Color"].default_value)[:3] == tuple(bsdf.inputs["Base Color"].default_value)[:3]
 
 
+def test_outlines_of_blended_parts_draw_dithered():
+    reset()
+    from kk2blender import outlines
+    cloth = bpy.data.materials.new("cloth")
+    cloth.surface_render_method = "BLENDED"
+    outline = cloth.copy()
+    outline.name = "Outline cloth"
+    outline["kkbp_outline"] = "cloth"
+    outline.use_backface_culling = True
+    assert outline.surface_render_method == "BLENDED"
+    me = bpy.data.meshes.new("m")
+    me.materials.append(cloth)
+    me.materials.append(outline)
+    obj = bpy.data.objects.new("cloth", me)
+    ch = SimpleNamespace(parts=lambda: [obj])
+    lines = []
+    outlines.apply(ch, lines.append)
+    assert outline.surface_render_method == "DITHERED"
+    assert outline.use_backface_culling
+    assert cloth.surface_render_method == "BLENDED"
+    assert lines and "1 outline" in lines[0], lines
+
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 failed = 0

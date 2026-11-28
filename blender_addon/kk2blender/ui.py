@@ -84,8 +84,10 @@ class KK2B_PT_panel(bpy.types.Panel):
         if not kkbp_link.available():
             col.label(text="KKBP isn't enabled: characters can't be imported", icon="ERROR")
         elif not kkbp_link.pillow_ready():
-            col.label(text="KKBP needs Pillow before characters import", icon="ERROR")
-            col.operator("kkbp.install_pillow", icon="IMPORT")
+            col.label(text="KKBP can't load Pillow: characters can't be imported", icon="ERROR")
+            col.label(text="KK2Blender ships Pillow: reinstall it from its zip and restart Blender")
+            if hasattr(bpy.types, "KKBP_OT_install_pillow"):  # KKBP's own download, as a fallback
+                col.operator("kkbp.install_pillow", icon="IMPORT")
         col.separator()
         col.label(text="Lighting")
         row = col.row(align=True)

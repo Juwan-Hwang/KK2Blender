@@ -41,8 +41,9 @@ Game side (Windows, KK with HF Patch):
 
 Blender side (5.2 or later, Windows or Linux):
 
-1. Install the KKBP extension zip (`kkbp-*.zip`) and let it install Pillow (its panel has a button).
-2. Install the KK2Blender extension zip.
+1. Install the KKBP extension zip (`kkbp-*.zip`).
+2. Install the KK2Blender extension zip. It ships the Pillow wheels KKBP needs, which Blender installs
+   with it (restart Blender once afterwards).
 3. Optional: build a map library with [kkbp-maps](https://github.com/kkbp-dev/kkbp-maps) and add it
    as an asset library; Import All then links the scene's map.
 

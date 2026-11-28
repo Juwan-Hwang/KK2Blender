@@ -31,7 +31,8 @@ def available() -> bool:
 
 
 def pillow_ready() -> bool:
-    """KKBP needs Pillow before it imports anything; it installs it from its own sidebar tab."""
+    """KKBP needs Pillow before it imports anything. KK2Blender ships Pillow wheels that Blender installs
+    with the add-on; KKBP can also download it from its sidebar tab."""
     import importlib
     for name in ("bl_ext.user_default.kkbp.pillow", "kkbp.pillow"):
         try:

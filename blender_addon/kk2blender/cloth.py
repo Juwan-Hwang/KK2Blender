@@ -30,6 +30,26 @@ def write_pc2(path: Path, frames: np.ndarray, start: float = 1.0, rate: float = 
         f.write(np.ascontiguousarray(frames, dtype="<f4").tobytes())
 
 
+def write_cache(folder: Path, name: str, frames: np.ndarray, start: float = 1.0) -> Path:
+    """Writes a point cache named `name` into `folder`, or, when that can't be written (a read-only
+    share, a file another Blender still holds open), next to it under a new name or in the system's
+    temporary folder. Returns where it went."""
+    import tempfile
+    tries = [folder / name]
+    stem, suffix = Path(name).stem, Path(name).suffix
+    tries += [folder / f"{stem}.{i}{suffix}" for i in range(1, 4)]
+    tries.append(Path(tempfile.gettempdir()) / "kk2blender_cache" / name)
+    error = None
+    for path in tries:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            write_pc2(path, frames, start)
+            return path
+        except OSError as e:
+            error = e
+    raise error
+
+
 def _attr(mesh, name):
     a = mesh.attributes.get(name)
     if a is None or a.domain != "POINT":
@@ -80,7 +100,6 @@ def apply(bake, export_folder: Path, frame_start: int):
         return 0
     arm = bake.ch.armature
     cache_dir = export_folder / "cache"
-    cache_dir.mkdir(exist_ok=True)
     done = 0
     for mesh_id, info in cloth_meshes:
         ch = "cloth:" + info["path"]
@@ -104,8 +123,7 @@ def apply(bake, export_folder: Path, frame_start: int):
             # Object space: the object hangs under the armature, fixed relative to it.
             to_obj = np.array(target.matrix_world.inverted() @ arm.matrix_world)
             pts = arm_space[:, index, :] @ to_obj[:3, :3].T + to_obj[:3, 3]
-            cache = cache_dir / f"{bake.ch.key}_{mesh_id}.pc2"
-            write_pc2(cache, pts.astype(np.float32), float(frame_start))
+            cache = write_cache(cache_dir, f"{bake.ch.key}_{mesh_id}.pc2", pts.astype(np.float32), float(frame_start))
             mod = target.modifiers.new("KK2Blender cloth", "MESH_CACHE")
             mod.cache_format = "PC2"
             mod.filepath = str(cache)
