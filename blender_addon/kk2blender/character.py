@@ -6,7 +6,7 @@ import bpy
 import numpy as np
 from mathutils import Matrix
 
-from . import anim, face, k2t, matching, pose, space, visibility
+from . import anim, face, k2t, matching, pose, shapes, space, visibility
 
 OUTFIT = "kkbp_outfit"  # KKBP's custom property: the Outfit an object or bone belongs to
 ID = "kkbp_id"  # KKBP's custom property: a material's bundle Id
@@ -145,22 +145,26 @@ class CharacterBake:
         """{"raw:<game blend shape name>": (frames,) weight 0..1} from every skinned renderer's baked
         blend shape weights. KK's blend shape names carry their mesh ("eye_face.f00_def_op",
         "kuti_ha.ha00_def_op"), so a name means the same shape wherever it is."""
-        out: dict[str, np.ndarray] = {}
-        for path, info in self.tracks.header.get("renderers", {}).items():
-            names = info.get("blend_shapes")
-            ch = "shape:" + path
-            if not names or ch not in self.tracks:
-                continue
-            data = self.tracks.full(ch)
-            if data.shape[1] != len(names):
-                continue
-            for i, name in enumerate(names):
-                key = "raw:" + name
-                w = np.nan_to_num(data[:, i]) / 100.0
-                # A shape on a renderer that isn't drawn yet (an outfit not worn) mustn't win.
-                if key not in out or (np.abs(w).max() > np.abs(out[key]).max()):
-                    out[key] = w
-        return out
+        return shapes.by_name(self.shape_weights_by_renderer())
+
+    def shape_weights_by_renderer(self) -> dict[str, dict[str, np.ndarray]]:
+        if getattr(self, "_shape_cache", None) is None:
+            self._shape_cache = shapes.per_renderer(
+                self.tracks.header.get("renderers", {}),
+                lambda ch: self.tracks.full(ch) if ch in self.tracks else None)
+        return self._shape_cache
+
+    def renderer_paths_of(self, obj) -> list[str]:
+        """The game renderer paths of the bundle meshes whose materials an object has."""
+        ids = {m.get(ID) for m in obj.data.materials if m is not None and m.get(ID)}
+        known = self.mapped("meshes")
+        paths = []
+        for p in self.bundle.passes:
+            for mesh in p.meshes:
+                path = known.get(mesh.id, {}).get("path")
+                if path and ids.intersection(mesh.materials) and path not in paths:
+                    paths.append(path)
+        return paths
 
     def apply_raw_face(self) -> int:
         """Keys the game's own blend shapes, exported as "raw:" shape keys, with the game's weights
@@ -178,13 +182,15 @@ class CharacterBake:
                 continue
             if weights is None:
                 weights = self.raw_shape_weights()
+            # Clothing mods reuse shape names ("Key 1"): the object's own renderers' weights come first.
+            local = shapes.for_object(self.renderer_paths_of(obj), self.shape_weights_by_renderer(), weights)
             if key.animation_data:
                 for d in list(key.animation_data.drivers):
                     if d.data_path.startswith('key_blocks["raw:'):
                         key.animation_data.drivers.remove(d)
             curves = anim.Curves(key, f"{obj.name} face (KK2Blender)")
             for name in raw:
-                w = weights.get(name)
+                w = local.get(name)
                 if w is None:
                     continue
                 curves.curve(f'key_blocks["{name}"].value', 0, frames, np.clip(w, 0.0, 1.0), group="Game shapes")
