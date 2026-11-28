@@ -10,7 +10,8 @@ namespace KK2Blender
     /// <list type="bullet">
     /// <item>"camera": the rendering camera's world matrix, then vertical FOV (degrees), near, far,
     /// orthographic (0/1) and orthographic size: 17 floats.</item>
-    /// <item>"item:&lt;key&gt;": a Studio item's world matrix and whether it shows: 13 floats.</item>
+    /// <item>"item:&lt;key&gt;": a Studio item's world matrix, whether it shows, and its Alpha (Studio's
+    /// slider or the Timeline's; it fades only the item's alpha renderers): 14 floats.</item>
     /// <item>"item:&lt;key&gt;:bone:&lt;path&gt;": bones of skinned or animated items, relative to the item.</item>
     /// <item>"light:&lt;n&gt;": every Unity light: world matrix, RGB, intensity, range, spot angle,
     /// enabled, shadow strength: 20 floats.</item>
@@ -148,11 +149,12 @@ namespace KK2Blender
                     continue;
                 }
                 var t = item.objectItem.transform;
-                var r = new float[13];
+                var r = new float[14];
                 Space.Matrix(t.localToWorldMatrix, r, 0);
                 r[12] = item.objectItem.activeInHierarchy ? 1f : 0f;
+                r[13] = item.itemInfo != null ? item.itemInfo.alpha : 1f;
                 string key = "item:" + item.objectInfo.dicKey;
-                tracks.Put(key, "matrix_vis", r);
+                tracks.Put(key, "matrix_vis_alpha", r);
 
                 PathTable bones;
                 if (itemBones.TryGetValue(item, out bones))

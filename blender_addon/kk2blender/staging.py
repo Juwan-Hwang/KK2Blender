@@ -145,9 +145,15 @@ def build_items(folder, frame_start, collection, hide_rig_markers=True):
             obj["kk2b_file"] = asset.get("file", "")
         collection.objects.link(obj)
         model = item.get("model")
+        alpha_hide = None
+        parts = []
         if model and (folder.path / model).exists():
             from . import toon
             parts = _attach_model(obj, folder.path / model, collection)
+            try:
+                alpha_hide = _apply_item_alpha(folder, item, data, parts, frame_start)
+            except Exception as e:  # never lose the scene over the item's alpha
+                print(f"KK2Blender: {item.get('name')}: item alpha not applied: {e}")
             for part in parts:
                 if part.type == "MESH":
                     for m in part.data.materials:
@@ -168,12 +174,76 @@ def build_items(folder, frame_start, collection, hide_rig_markers=True):
                 o.hide_viewport = True
             made.append(obj)
             continue
-        hidden = (np.nan_to_num(data[:, 12]) < 0.5).astype(float)
+        hidden = np.nan_to_num(data[:, 12]) < 0.5
+        if alpha_hide is not None:
+            # Every material of the item follows its Alpha, and the Alpha is 0: the game draws nothing.
+            hidden = hidden | alpha_hide
+        hidden = hidden.astype(float)
         if hidden.any():
             curves.curve("hide_render", 0, frames, hidden, group="Visibility", interpolation="CONSTANT")
             curves.curve("hide_viewport", 0, frames, hidden, group="Visibility", interpolation="CONSTANT")
+            # Hiding the empty doesn't hide its children: the prop's meshes are keyed the same way.
+            for part in parts:
+                pc = anim.Curves(part, f"{part.name} (KK2Blender)")
+                pc.curve("hide_render", 0, frames, hidden, group="Visibility", interpolation="CONSTANT")
+                pc.curve("hide_viewport", 0, frames, hidden, group="Visibility", interpolation="CONSTANT")
         made.append(obj)
     return made
+
+
+def _apply_item_alpha(folder, item, data, parts, frame_start):
+    """Studio's item Alpha: multiplies it into the materials that follow it (keyed per frame when the
+    Timeline animates it) and returns the frames on which the whole item is invisible, or None."""
+    from . import item_alpha
+    version = (folder.scene.get("exporter") or {}).get("version")
+    glb = folder.path / item.get("model")
+    driven = item_alpha.driven_material_names(item_alpha.glb_materials(glb), item_alpha.marks_item_alpha(version))
+    if not driven:
+        return None
+    alpha = item_alpha.alpha_per_frame(data, item.get("alpha"))
+    mats = []
+    for part in parts:
+        if part.type == "MESH":
+            mats.extend(m for m in part.data.materials if m is not None)
+    hide, fade = item_alpha.plan(alpha, [m.name for m in mats], driven)
+    if fade is not None:
+        frames = _frames(len(fade), frame_start)
+        done = set()
+        for m in mats:
+            if m.name in done or item_alpha.base_name(m.name) not in driven:
+                continue
+            done.add(m.name)
+            _fade_material(m, fade, frames)
+    return hide
+
+
+def _fade_material(mat, fade, frames):
+    """Multiplies the Principled BSDF's alpha by the item's Alpha (before toon.apply, which keeps it)."""
+    from . import item_alpha
+    if not mat.use_nodes:
+        return
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    bsdf = next((x for x in nodes if x.type == "BSDF_PRINCIPLED"), None)
+    if bsdf is None or bsdf.inputs.get("Alpha") is None or nodes.get(item_alpha.NODE_NAME) is not None:
+        return
+    alpha = bsdf.inputs["Alpha"]
+    mul = nodes.new("ShaderNodeMath")
+    mul.name = mul.label = item_alpha.NODE_NAME
+    mul.operation = "MULTIPLY"
+    mul.location = (bsdf.location.x - 200, bsdf.location.y - 300)
+    link = next((x for x in links if x.to_socket == alpha), None)
+    if link is not None:
+        links.new(link.from_socket, mul.inputs[0])
+    else:
+        mul.inputs[0].default_value = alpha.default_value
+    links.new(mul.outputs[0], alpha)
+    values = np.asarray(fade, dtype=np.float64)
+    mul.inputs[1].default_value = float(values[0])
+    if np.any(np.abs(values - values[0]) > 1e-6):
+        curves = anim.Curves(mat.node_tree, f"{mat.name} alpha (KK2Blender)")
+        curves.curve(f'nodes["{item_alpha.NODE_NAME}"].inputs[1].default_value', 0, frames, values, group="Item Alpha")
+    if getattr(mat, "surface_render_method", None) not in (None, "BLENDED", "DITHERED"):
+        mat.surface_render_method = "DITHERED"
 
 
 def _point_attr(mesh, *names):

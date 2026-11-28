@@ -24,6 +24,11 @@ namespace KK2Blender.Format
             public int Lightmap = -1;
             /// <summary>How the lightmap image encodes light: "rgbm" (Unity's, range 5) or "plain".</summary>
             public string LightmapEncoding = "rgbm";
+            /// <summary>
+            /// The material follows the Studio item's Alpha (an item's alpha renderers, ItemComponent.rendAlpha):
+            /// named in extras ("kk2b_item_alpha") so Blender scales its alpha by the item's per-frame alpha.
+            /// </summary>
+            public bool ItemAlpha;
         }
 
         public sealed class Primitive
@@ -223,10 +228,19 @@ namespace KK2Blender.Format
                 {
                     mat.Set("emissiveFactor", m.Emissive);
                 }
+                JsonObject extras = null;
                 if (m.Lightmap >= 0)
                 {
                     mat.Set("occlusionTexture", new JsonObject().Set("index", m.Lightmap).Set("texCoord", 1));
-                    mat.Set("extras", new JsonObject().Set("kk2b_lightmap", m.LightmapEncoding));
+                    extras = new JsonObject().Set("kk2b_lightmap", m.LightmapEncoding);
+                }
+                if (m.ItemAlpha)
+                {
+                    extras = (extras ?? new JsonObject()).Set("kk2b_item_alpha", true);
+                }
+                if (extras != null)
+                {
+                    mat.Set("extras", extras);
                 }
                 mats.Add(mat);
             }

@@ -122,6 +122,24 @@ namespace KK2Blender.Tests
 
         /// <summary>Writes a sample file for the Python reader's cross-check (tests/python).</summary>
         [Fact]
+        public void MarksMaterialsThatFollowTheItemAlpha()
+        {
+            var b = new GlbBuilder();
+            b.AddMaterial(new GlbBuilder.MaterialSpec { Name = "fade", AlphaMode = "BLEND", ItemAlpha = true });
+            b.AddMaterial(new GlbBuilder.MaterialSpec { Name = "lit", Lightmap = 0, ItemAlpha = true });
+            b.AddMaterial(new GlbBuilder.MaterialSpec { Name = "plain" });
+            var mesh = new GlbBuilder.MeshSpec { Name = "tri", Positions = new float[] { 0, 0, 0, 1, 0, 0, 0, 1, 0 } };
+            mesh.Primitives.Add(new GlbBuilder.Primitive { Indices = new[] { 0, 1, 2 }, Material = 0 });
+            b.AddNode(mesh, new float[] { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 });
+            byte[] glb = b.Build();
+            string json = Encoding.UTF8.GetString(glb, 20, (int)BitConverter.ToUInt32(glb, 12));
+            Assert.Contains("\"name\":\"fade\",\"pbrMetallicRoughness\"", json);
+            Assert.Contains("\"extras\":{\"kk2b_item_alpha\":true}", json);
+            Assert.Contains("\"extras\":{\"kk2b_lightmap\":\"rgbm\",\"kk2b_item_alpha\":true}", json);
+            Assert.Equal(2, json.Split(new[] { "kk2b_item_alpha" }, StringSplitOptions.None).Length - 1);
+        }
+
+        [Fact]
         public void WritesTheCrossCheckSample()
         {
             string dir = Environment.GetEnvironmentVariable("K2T_SAMPLE_DIR");
@@ -179,6 +197,24 @@ namespace KK2Blender.Tests
             int binHeader = 20 + (int)jsonLength;
             Assert.Equal(0x004E4942u, BitConverter.ToUInt32(glb, binHeader + 4));
             Assert.Equal(0u, BitConverter.ToUInt32(glb, binHeader) % 4);
+        }
+
+        [Fact]
+        public void MarksMaterialsThatFollowTheItemAlpha()
+        {
+            var b = new GlbBuilder();
+            b.AddMaterial(new GlbBuilder.MaterialSpec { Name = "fade", AlphaMode = "BLEND", ItemAlpha = true });
+            b.AddMaterial(new GlbBuilder.MaterialSpec { Name = "lit", Lightmap = 0, ItemAlpha = true });
+            b.AddMaterial(new GlbBuilder.MaterialSpec { Name = "plain" });
+            var mesh = new GlbBuilder.MeshSpec { Name = "tri", Positions = new float[] { 0, 0, 0, 1, 0, 0, 0, 1, 0 } };
+            mesh.Primitives.Add(new GlbBuilder.Primitive { Indices = new[] { 0, 1, 2 }, Material = 0 });
+            b.AddNode(mesh, new float[] { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 });
+            byte[] glb = b.Build();
+            string json = Encoding.UTF8.GetString(glb, 20, (int)BitConverter.ToUInt32(glb, 12));
+            Assert.Contains("\"name\":\"fade\",\"pbrMetallicRoughness\"", json);
+            Assert.Contains("\"extras\":{\"kk2b_item_alpha\":true}", json);
+            Assert.Contains("\"extras\":{\"kk2b_lightmap\":\"rgbm\",\"kk2b_item_alpha\":true}", json);
+            Assert.Equal(2, json.Split(new[] { "kk2b_item_alpha" }, StringSplitOptions.None).Length - 1);
         }
 
         [Fact]

@@ -193,6 +193,9 @@ def test_import_all_without_characters():
     assert np.allclose(first, (1, 0, 0), atol=1e-4), first
     scene.frame_set(4)
     assert chair.hide_render
+    assert tri.hide_render and tri.hide_viewport  # the prop's mesh hides with its item
+    scene.frame_set(1)
+    assert not tri.hide_render
     assert bpy.data.objects.get(lighting.RIG_NAME) is not None
     assert bpy.data.objects.get(lighting.RIG_NAME).parent == cam
     assert scene.render.resolution_x == 1280 and scene.render.resolution_y == 720
@@ -276,6 +279,54 @@ def test_map_cameras_and_effects():
     assert s.compositing_node_group is not None
     assert any(n.bl_idname == "CompositorNodeGlare" for n in s.compositing_node_group.nodes)
     assert any("map" in line for line in report.lines), report.lines
+
+
+def test_item_alpha():
+    """Studio's item Alpha: a plane at Alpha 0 in front of the camera draws nothing in the game
+    (export kk2b_20261129_001415); an animated Alpha fades the item's alpha materials."""
+    reset()
+    tmp = Path(tempfile.mkdtemp())
+    frames = 4
+    tracks = tmp / "tracks"
+    tracks.mkdir(parents=True)
+    old = [list(rows(np.eye(4))) + [1.0] for _ in range(frames)]  # 0.1.5: no alpha column
+    new = [list(rows(np.eye(4))) + [1.0, a] for a in (1.0, 0.5, 0.0, 1.0)]
+    write_k2t(tracks / "scene.k2t", frames, [
+        ("item:1", "matrix_vis", 0, np.array(old), False),
+        ("item:2", "matrix_vis_alpha", 0, np.array(new), False),
+    ])
+    write_k2t(tracks / "time.k2t", frames, [("time", "seconds", 0, np.arange(frames)[:, None] / 30.0, False)])
+    (tmp / "props").mkdir()
+    blend = {"name": "m_koi_stu_kihon01_02 (Instance)", "alphaMode": "BLEND",
+             "pbrMetallicRoughness": {"baseColorFactor": [1, 1, 1, 1]}}
+    write_glb_triangle(tmp / "props" / "item_1.glb", material=blend)
+    write_glb_triangle(tmp / "props" / "item_2.glb", material=dict(blend, extras={"kk2b_item_alpha": True}))
+    items = [{"key": 1, "name": "Plane", "track": "item:1", "alpha": 0, "model": "props/item_1.glb"},
+             {"key": 2, "name": "Fade", "track": "item:2", "alpha": 1, "model": "props/item_2.glb"}]
+    for version in ("0.1.5", "0.1.6"):
+        reset()
+        scene = {"format": "kk2blender-scene", "version": 1, "complete": True, "exporter": {"version": version},
+                 "characters": [], "items": items if version == "0.1.5" else items[1:], "map": None,
+                 "bake": {"fps": 30, "frame_count": frames,
+                          "tracks": {"scene": "tracks/scene.k2t", "time": "tracks/time.k2t"}}}
+        (tmp / "scene.json").write_text(json.dumps(scene))
+        build.import_scene(tmp, "soft", "preview", import_characters=False)
+        sc = bpy.context.scene
+        if version == "0.1.5":
+            plane = bpy.data.objects["Plane"]
+            mesh = next(o for o in plane.children if o.type == "MESH")
+            for f in range(1, frames + 1):
+                sc.frame_set(f)
+                assert plane.hide_render and plane.hide_viewport, f
+                assert mesh.hide_render and mesh.hide_viewport, f
+        fade = bpy.data.objects["Fade"]
+        tri = next(o for o in fade.children if o.type == "MESH")
+        node = tri.data.materials[0].node_tree.nodes["KK2Blender item alpha"]
+        seen = []
+        for f in range(1, frames + 1):
+            sc.frame_set(f)
+            seen.append((round(node.inputs[1].default_value, 3), fade.hide_render and tri.hide_viewport))
+        assert seen == [(1.0, False), (0.5, False), (0.0, True), (1.0, False)], (version, seen)
 
 
 def test_toon_props():

@@ -36,8 +36,9 @@ def write_k2t(path, frame_count, channels, header=None):
     Path(path).write_bytes(b"K2T1" + struct.pack("<I", len(hb)) + hb + b"".join(blobs))
 
 
-def write_glb_triangle(path, node_translation=(0.0, 0.0, 0.0)):
-    """A one-triangle .glb in glTF space, like the plugin's prop files."""
+def write_glb_triangle(path, node_translation=(0.0, 0.0, 0.0), material=None):
+    """A one-triangle .glb in glTF space, like the plugin's prop files; `material`, a glTF material
+    dict, is given to its triangle."""
     positions = np.array([[0, 0, 0], [0.1, 0, 0], [0, 0.1, 0]], dtype="<f4")
     indices = np.array([0, 1, 2], dtype="<u4")
     binary = positions.tobytes() + indices.tobytes()
@@ -52,6 +53,9 @@ def write_glb_triangle(path, node_translation=(0.0, 0.0, 0.0)):
                        "min": [0, 0, 0], "max": [0.1, 0.1, 0]},
                       {"bufferView": 1, "componentType": 5125, "count": 3, "type": "SCALAR"}],
     }
+    if material is not None:
+        gltf["materials"] = [material]
+        gltf["meshes"][0]["primitives"][0]["material"] = 0
     j = json.dumps(gltf).encode()
     j += b" " * ((4 - len(j) % 4) % 4)
     total = 12 + 8 + len(j) + 8 + len(binary)

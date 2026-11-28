@@ -73,7 +73,7 @@ with the same path gets `#2`. Header fields: `renderers` (per path: renderer nam
 | `camera` | 17 | world matrix, vertical FOV (degrees), near, far, orthographic, orthographic size |
 | `camera_target` | 4 | the point Studio's camera orbits (x, y, z) and the distance to it (depth of field focus) |
 | `studiocam:<key>` | 14 | a camera object placed in Studio: world matrix, shown, active |
-| `item:<key>` | 13 | Studio item world matrix, shown |
+| `item:<key>` | 14 (13 before 0.1.6) | Studio item world matrix, shown, item Alpha (Studio slider or Timeline; fades only the item's alpha renderers, whose glb materials carry `extras.kk2b_item_alpha`) |
 | `item:<key>:bone:<path>` | 12 | bones of animated or skinned items, item-relative |
 | `folder:<key>` | 13 | Studio folder world matrix, shown |
 | `light:<n>` | 20 | world matrix, RGB, intensity, range, spot angle, enabled, shadow strength |

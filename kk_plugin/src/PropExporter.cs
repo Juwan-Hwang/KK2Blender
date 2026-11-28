@@ -29,8 +29,30 @@ namespace KK2Blender
         /// <summary>The .glb bytes, or null when the item has no mesh to write.</summary>
         public byte[] Export(OCIItem item)
         {
-            return Export(item.objectItem.transform, false, true);
+            // Studio's Alpha slider (and the Timeline's item alpha) sets _alpha on the item's alpha renderers
+            // only; their materials are marked so Blender can follow it.
+            alphaRenderers.Clear();
+            if (item.itemComponent != null && item.itemComponent.rendAlpha != null)
+            {
+                foreach (var r in item.itemComponent.rendAlpha)
+                {
+                    if (r != null)
+                    {
+                        alphaRenderers.Add(r);
+                    }
+                }
+            }
+            try
+            {
+                return Export(item.objectItem.transform, false, true);
+            }
+            finally
+            {
+                alphaRenderers.Clear();
+            }
         }
+
+        private readonly HashSet<Renderer> alphaRenderers = new HashSet<Renderer>();
 
         /// <summary>
         /// Every renderer below <paramref name="root"/>, in root's space. With lightmaps, baked lightmaps
@@ -353,7 +375,7 @@ namespace KK2Blender
                     tris[i + 2] = b;
                 }
                 var mat = k < mats.Length ? mats[k] : null;
-                spec.Primitives.Add(new GlbBuilder.Primitive { Indices = tris, Material = Material(mat, lightmap) });
+                spec.Primitives.Add(new GlbBuilder.Primitive { Indices = tris, Material = Material(mat, lightmap, alphaRenderers.Contains(r)) });
             }
             glb.AddNode(spec, ColumnMajorGltf(place));
         }
@@ -396,10 +418,10 @@ namespace KK2Blender
 
         private int Material(Material m)
         {
-            return Material(m, -1);
+            return Material(m, -1, false);
         }
 
-        private int Material(Material m, int lightmap)
+        private int Material(Material m, int lightmap, bool itemAlpha)
         {
             if (m == null)
             {
@@ -407,12 +429,12 @@ namespace KK2Blender
             }
             int index;
             // The same material with and without a lightmap are two glTF materials.
-            var cacheKey = lightmap >= 0 ? null : m;
+            var cacheKey = lightmap >= 0 || itemAlpha ? null : m;
             if (cacheKey != null && materialOf.TryGetValue(cacheKey, out index))
             {
                 return index;
             }
-            var spec = new GlbBuilder.MaterialSpec { Name = m.name, Lightmap = lightmap };
+            var spec = new GlbBuilder.MaterialSpec { Name = m.name, Lightmap = lightmap, ItemAlpha = itemAlpha };
             string shader = m.shader != null ? m.shader.name.ToLowerInvariant() : "";
             if (shader.Contains("alpha") || shader.Contains("transparent") || m.renderQueue >= 3000)
             {
