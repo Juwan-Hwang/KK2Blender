@@ -125,6 +125,9 @@ namespace KK2Blender.Tests
             int len = BitConverter.ToInt32(glb, 12);
             string json = Encoding.UTF8.GetString(glb, 20, len);
             Assert.Contains("raw:eye_face.f00_def_op", json);
+            // KKBP gives Body's outline the first material: the face's, so the face mesh comes first.
+            Assert.True(body.IndexOf("cf_O_face", System.StringComparison.Ordinal) < body.IndexOf("o_body_a", System.StringComparison.Ordinal));
+            Assert.True(json.IndexOf("cf_m_face_00", System.StringComparison.Ordinal) < json.IndexOf("cf_m_body", System.StringComparison.Ordinal));
         }
     }
 

@@ -140,6 +140,18 @@ namespace KK2Blender.Format.Bundle
 
         private static readonly HashSet<string> RepeatableTextureRoles = new HashSet<string> { "overlay" };
 
+        /// <summary>Moves the mesh whose first material has the face role to the front, keeping the others' order.</summary>
+        public static void FaceFirst(List<BundleMesh> meshes, Func<string, string> roleOfMaterial)
+        {
+            int at = meshes.FindIndex(m => m.Primitives.Count > 0 && roleOfMaterial(m.Primitives[0].MaterialKey) == "face");
+            if (at > 0)
+            {
+                var face = meshes[at];
+                meshes.RemoveAt(at);
+                meshes.Insert(0, face);
+            }
+        }
+
         private void Prepare()
         {
             bonesByKey = new Dictionary<string, BundleBone>();
@@ -179,6 +191,21 @@ namespace KK2Blender.Format.Bundle
                     m.Role = null;
                 }
                 DropRepeatedTextures(m.Textures, "material " + m.Key);
+            }
+
+            // KKBP orders Body's material slots by the Body Pass's mesh order, and its outline needs the
+            // face material first: the mesh with the face material leads the Body Pass.
+            var roleOf = new Dictionary<string, string>();
+            foreach (var m in bundle.Materials)
+            {
+                roleOf[m.Key] = m.Role;
+            }
+            foreach (var pass in bundle.Passes)
+            {
+                if (pass.Kind == "body")
+                {
+                    FaceFirst(pass.Meshes, key => { string r; return key != null && roleOf.TryGetValue(key, out r) ? r : null; });
+                }
             }
 
             // Morph target names are unique per mesh.

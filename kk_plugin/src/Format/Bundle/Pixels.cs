@@ -33,6 +33,37 @@ namespace KK2Blender.Format.Bundle
             return (byte)Math.Max(0, Math.Min(255, b));
         }
 
+        /// <summary>
+        /// Straight (not premultiplied) RGBA of a surface rendered twice, once over transparent black and
+        /// once over opaque white. A blended shader (SrcAlpha, OneMinusSrcAlpha) leaves c·a over black and
+        /// c·a + (1 − a) over white, so a = 1 − (white − black) and c = black / a; an opaque or alpha-tested
+        /// pixel is the same on both (a = 1) and a pixel nothing drew is black and white (a = 0). Reading
+        /// the render target's own alpha instead gives a² and darkened colours for blended shaders.
+        /// The result is written into <paramref name="onBlack"/>.
+        /// </summary>
+        public static void Unblend(byte[] onBlack, byte[] onWhite)
+        {
+            for (int i = 0; i + 3 < onBlack.Length && i + 3 < onWhite.Length; i += 4)
+            {
+                int diff = 0;
+                for (int c = 0; c < 3; c++)
+                {
+                    diff += Math.Max(0, onWhite[i + c] - onBlack[i + c]);
+                }
+                double a = 1.0 - diff / (3.0 * 255.0);
+                if (a <= 0.5 / 255.0)
+                {
+                    onBlack[i] = onBlack[i + 1] = onBlack[i + 2] = onBlack[i + 3] = 0;
+                    continue;
+                }
+                for (int c = 0; c < 3; c++)
+                {
+                    onBlack[i + c] = (byte)Math.Max(0, Math.Min(255, Math.Round(onBlack[i + c] / a)));
+                }
+                onBlack[i + 3] = (byte)Math.Max(0, Math.Min(255, Math.Round(a * 255.0)));
+            }
+        }
+
         /// <summary>Paints <paramref name="top"/> over <paramref name="under"/> where top has any alpha.</summary>
         public static void Over(byte[] under, byte[] top)
         {

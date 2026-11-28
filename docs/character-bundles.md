@@ -12,15 +12,26 @@ and KKBP's maker exporter aren't needed. The code is ours: `kk_plugin/src/Charac
 | Body (`body.glb`) | body, face, eyes, eye whites, eyelines, eyebrows, nose line, teeth, head tongue, tears, gag eyes |
 | Outfit NN (`outfits/NN/outfit.glb`), one per coordinate | clothes and their half-off meshes (`alternate`), hair, accessories (also MoreAccessories' extra slots), mod clothes; the body alpha mask of that coordinate as `body_textures` |
 
+The mesh with the face material leads the Body Pass, so the face is Body's first material in KKBP (its
+outline takes the first material for the face). A renderer with more materials than submeshes draws the
+last submesh again with each extra material, as Unity does (Material Editor's copies); each is its own
+primitive and material.
+
 Every renderer is captured whether it shows or not (clothes taken off, hidden accessories), so the bake's
 visibility channels decide what shows. Left out: mosaic and male-part stand-ins, silhouette bodies, the
-condom, the body's rigged tongue (`n_tang/o_tang`, see below), hit meshes and hit transforms, and meshes the
+shadow proxy (`o_shadowcaster`), the head's `o_Mask(Clone)` quad, the condom, the body's rigged tongue (`n_tang/o_tang`, see below), hit meshes and hit transforms, and meshes the
 game doesn't let scripts read (none in KK as far as known; each is a warning in the log).
 
 Materials carry their shader values, every texture slot they hold (normal maps unpacked from Unity's
 DXT5nm), and the light and dark main texture bakes KKBP's templates require, rendered with the game's own
 shader on a UV-space quad (and the flattened mesh for overlays on body and face) by our own camera and light.
-Tears and gag eyes get no bake (their templates don't use one).
+Tears and gag eyes get no bake (their templates don't use one). A blended material (Blend Mode `alpha` or
+`glasses`) is baked twice, over black and over white, and solved for straight colour and alpha: a single
+render of a blending shader leaves premultiplied colour and a squared alpha (`Pixels.Unblend`).
+
+Blend Modes: glasses shaders are `glasses`; shaders named `*alpha*` (main_alpha, main_item_studio_alpha,
+KKUTSalpha...) and render queues from 3000 are `alpha`; the face overlays (eyebrow, eyelines, nose line,
+eyes) are `alpha` as KKBP's exporter marks them; queues from 2450 are `cutout`; the rest `opaque`.
 
 ## Capture pose: the bind pose
 

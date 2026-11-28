@@ -188,7 +188,12 @@ namespace KK2Blender.Character
         }
 
         /// <summary>Bakes one material slot; <paramref name="flat"/> is the mesh flattened into UV space, or null.</summary>
-        public void Bake(Renderer renderer, Material source, int submesh, Mesh flat, int width, int height, out byte[] lit, out byte[] dark)
+        /// <remarks>
+        /// A <paramref name="blended"/> material is rendered twice, over black and over white, and the two
+        /// are solved for straight colour and alpha (<see cref="Pixels.Unblend"/>): its shader blends into the
+        /// target, which leaves premultiplied colour and a squared alpha in a single render.
+        /// </remarks>
+        public void Bake(Renderer renderer, Material source, int submesh, Mesh flat, int width, int height, bool blended, out byte[] lit, out byte[] dark)
         {
             var material = new Material(source);
             try
@@ -211,8 +216,8 @@ namespace KK2Blender.Character
                 }
                 var block = new MaterialPropertyBlock();
                 renderer.GetPropertyBlock(block);
-                lit = Render(Quaternion.identity, material, block, flat, submesh, width, height);
-                dark = Render(Quaternion.Euler(0, 180, 0), material, block, flat, submesh, width, height);
+                lit = Png(Quaternion.identity, material, block, flat, submesh, width, height, blended);
+                dark = Png(Quaternion.Euler(0, 180, 0), material, block, flat, submesh, width, height, blended);
             }
             finally
             {
@@ -220,7 +225,28 @@ namespace KK2Blender.Character
             }
         }
 
-        private byte[] Render(Quaternion lightRotation, Material material, MaterialPropertyBlock block, Mesh flat, int submesh, int width, int height)
+        private byte[] Png(Quaternion lightRotation, Material material, MaterialPropertyBlock block, Mesh flat, int submesh, int width, int height, bool blended)
+        {
+            var rgba = Render(lightRotation, material, block, flat, submesh, width, height, new Color(0, 0, 0, 0));
+            if (blended)
+            {
+                Pixels.Unblend(rgba, Render(lightRotation, material, block, flat, submesh, width, height, new Color(1, 1, 1, 1)));
+            }
+            var tex = new Texture2D(width, height, TextureFormat.RGBA32, false);
+            try
+            {
+                tex.SetPixels32(TextureCapture.ToColors(rgba));
+                tex.Apply(false);
+                return tex.EncodeToPNG();
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(tex);
+            }
+        }
+
+        /// <summary>One render of the material over <paramref name="background"/>, as bottom-up RGBA bytes.</summary>
+        private byte[] Render(Quaternion lightRotation, Material material, MaterialPropertyBlock block, Mesh flat, int submesh, int width, int height, Color background)
         {
             lightObject.transform.rotation = lightRotation;
             var rt = RenderTexture.GetTemporary(width, height, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default);
@@ -240,6 +266,7 @@ namespace KK2Blender.Character
             {
                 camera.targetTexture = rt;
                 camera.aspect = 1f;
+                camera.backgroundColor = background;
                 Graphics.DrawMesh(quad, Matrix4x4.TRS(new Vector3(0, 0, 0.5f), Quaternion.identity, Vector3.one), material, Layer, camera, 0, block, ShadowCastingMode.Off, false);
                 if (flat != null && submesh < flat.subMeshCount)
                 {
@@ -255,7 +282,7 @@ namespace KK2Blender.Character
                 read = new Texture2D(width, height, TextureFormat.RGBA32, false);
                 read.ReadPixels(new Rect(0, 0, width, height), 0, 0, false);
                 read.Apply(false);
-                return read.EncodeToPNG();
+                return TextureCapture.ToBytes(read.GetPixels32());
             }
             finally
             {

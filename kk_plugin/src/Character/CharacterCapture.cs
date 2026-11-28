@@ -420,7 +420,7 @@ namespace KK2Blender.Character
                 }
                 foreach (var r in top.GetComponentsInChildren<Renderer>(true))
                 {
-                    if (Drawable(r) && seen.Add(r) && !IsExcluded(r.transform) && OutfitOwner(r.transform) == null && r.name != "o_Mask")
+                    if (Drawable(r) && seen.Add(r) && !IsExcluded(r.transform) && OutfitOwner(r.transform) == null && !MaterialRules.NeverExport(r.name))
                     {
                         yield return r;
                     }
@@ -432,7 +432,7 @@ namespace KK2Blender.Character
         {
             foreach (var r in root.GetComponentsInChildren<Renderer>(true))
             {
-                if (Drawable(r) && !IsExcluded(r.transform) && OutfitOwner(r.transform) != null && r.name != "o_Mask")
+                if (Drawable(r) && !IsExcluded(r.transform) && OutfitOwner(r.transform) != null && !MaterialRules.NeverExport(r.name))
                 {
                     yield return r;
                 }
@@ -691,7 +691,7 @@ namespace KK2Blender.Character
                 {
                     continue;
                 }
-                int sub = Math.Min(slot, subs - 1);
+                int sub = MaterialRules.Submesh(slot, subs);
                 var tris = mesh.GetTriangles(sub);
                 if (tris == null || tris.Length < 3)
                 {
@@ -800,23 +800,9 @@ namespace KK2Blender.Character
 
         // --- materials ------------------------------------------------------------------------------------
 
-        private static string BlendMode(Material m)
+        private static string BlendMode(Material m, string role)
         {
-            string shader = m.shader != null ? m.shader.name : "";
-            if (shader.IndexOf("glasses", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return "glasses";
-            }
-            int queue = m.renderQueue;
-            if (queue >= 3000)
-            {
-                return "alpha";
-            }
-            if (queue >= 2450)
-            {
-                return "cutout";
-            }
-            return "opaque";
+            return MaterialRules.BlendMode(m.shader != null ? m.shader.name : "", m.renderQueue, role);
         }
 
         private BundleTexture TextureOf(Material m, string prop, string variant = null)
@@ -856,7 +842,7 @@ namespace KK2Blender.Character
                 Name = m.name.Replace(" (Instance)", ""),
                 Shader = m.shader != null ? m.shader.name : "",
                 Role = role,
-                BlendMode = BlendMode(m),
+                BlendMode = BlendMode(m, role),
                 Path = path,
                 Slot = slot,
             };
@@ -898,12 +884,12 @@ namespace KK2Blender.Character
             }
             if (baker != null && role != "tears" && role != "gag_eyes")
             {
-                AddBakes(r, m, submesh, mesh, bmat, role == "body" || role == "face");
+                AddBakes(r, m, submesh, mesh, bmat, role == "body" || role == "face", bmat.BlendMode == "alpha" || bmat.BlendMode == "glasses");
             }
             return bmat;
         }
 
-        private void AddBakes(Renderer r, Material m, int submesh, Mesh mesh, BundleMaterial bmat, bool skin)
+        private void AddBakes(Renderer r, Material m, int submesh, Mesh mesh, BundleMaterial bmat, bool skin, bool blended)
         {
             bool overlay = LightBaker.HasOverlay(m);
             int cacheKey = m.GetInstanceID();
@@ -923,7 +909,7 @@ namespace KK2Blender.Character
                 byte[] lit, dark;
                 try
                 {
-                    baker.Bake(r, m, submesh, flat, w, h, out lit, out dark);
+                    baker.Bake(r, m, submesh, flat, w, h, blended, out lit, out dark);
                 }
                 catch (Exception e)
                 {
