@@ -319,14 +319,42 @@ namespace KK2Blender.Format.Bundle
             return o.Set("file", TextureFile(t)).Set("offset", t.Offset).Set("scale", t.Scale);
         }
 
-        private static JsonObject Map<T>(List<KeyValuePair<string, T>> list)
+        /// <summary>A material's values as a JSON object. KKBP's reader takes only finite numbers, so a
+        /// value a shader left NaN or infinite (generic capture reads every property) is left out.</summary>
+        private JsonObject Map<T>(List<KeyValuePair<string, T>> list)
         {
             var o = new JsonObject();
             foreach (var kv in list)
             {
+                if (!Finite(kv.Value))
+                {
+                    Warnings.Add("Material value " + kv.Key + " wasn't a finite number; left out");
+                    continue;
+                }
                 o.Set(kv.Key, kv.Value);
             }
             return o;
+        }
+
+        private static bool Finite(object value)
+        {
+            if (value is float)
+            {
+                float f = (float)value;
+                return !float.IsNaN(f) && !float.IsInfinity(f);
+            }
+            var a = value as float[];
+            if (a != null)
+            {
+                foreach (var f in a)
+                {
+                    if (float.IsNaN(f) || float.IsInfinity(f))
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
 
         private JsonObject WriteMaterials()

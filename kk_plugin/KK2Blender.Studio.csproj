@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <Compile Remove="tests/**" />
+    <!-- Shader property names per shader (tools/build_shader_table.py): Unity 5.6 can't list them. -->
+    <EmbeddedResource Include="data/shader-properties.json" LogicalName="KK2Blender.ShaderProperties.json" />
   </ItemGroup>
 
   <ItemGroup>
