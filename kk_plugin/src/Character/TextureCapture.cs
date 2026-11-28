@@ -193,7 +193,14 @@ namespace KK2Blender.Character
         /// are solved for straight colour and alpha (<see cref="Pixels.Unblend"/>): its shader blends into the
         /// target, which leaves premultiplied colour and a squared alpha in a single render.
         /// </remarks>
-        public void Bake(Renderer renderer, Material source, int submesh, Mesh flat, int width, int height, bool blended, out byte[] lit, out byte[] dark)
+        /// <remarks>
+        /// <paramref name="family"/> adds what its shader needs off for a UV-space render: floats zeroed
+        /// (metal and gloss a lone light can't show, its outline width, so an outline pass draws nothing
+        /// even where it isn't culled; KKBP's Outlines hook draws the outline in Blender) and view-dependent
+        /// textures cleared. Results are bottom-up RGBA bytes; <see cref="Encode"/> makes them PNGs.
+        /// </remarks>
+        public void Bake(Renderer renderer, Material source, int submesh, Mesh flat, int width, int height, bool blended, ShaderFamily family,
+            out byte[] lit, out byte[] dark)
         {
             var material = new Material(source);
             try
@@ -214,10 +221,27 @@ namespace KK2Blender.Character
                         material.SetFloat(f, 0f);
                     }
                 }
+                if (family != null)
+                {
+                    foreach (var t in family.BakeClearTextures)
+                    {
+                        if (material.HasProperty(t))
+                        {
+                            material.SetTexture(t, null);
+                        }
+                    }
+                    foreach (var f in family.BakeZeroFloats)
+                    {
+                        if (material.HasProperty(f))
+                        {
+                            material.SetFloat(f, 0f);
+                        }
+                    }
+                }
                 var block = new MaterialPropertyBlock();
                 renderer.GetPropertyBlock(block);
-                lit = Png(Quaternion.identity, material, block, flat, submesh, width, height, blended);
-                dark = Png(Quaternion.Euler(0, 180, 0), material, block, flat, submesh, width, height, blended);
+                lit = Rgba(Quaternion.identity, material, block, flat, submesh, width, height, blended);
+                dark = Rgba(Quaternion.Euler(0, 180, 0), material, block, flat, submesh, width, height, blended);
             }
             finally
             {
@@ -225,13 +249,105 @@ namespace KK2Blender.Character
             }
         }
 
-        private byte[] Png(Quaternion lightRotation, Material material, MaterialPropertyBlock block, Mesh flat, int submesh, int width, int height, bool blended)
+        /// <summary>
+        /// The Flat bake (<see cref="BakeKind.Flat"/>): the family's main texture, placed by the material's
+        /// tiling and offset, times its main colour (light), and that times its shade colour, or 0.7 grey
+        /// without one (dark). Without a main texture, the average of a <see cref="ShaderFamily.SolidFrom"/>
+        /// texture (a matcap) or white stands in. Returns the main texture property used, or null.
+        /// </summary>
+        public static string Flat(Material m, ShaderFamily family, Texture blockMain, int width, int height, out byte[] lit, out byte[] dark)
         {
-            var rgba = Render(lightRotation, material, block, flat, submesh, width, height, new Color(0, 0, 0, 0));
-            if (blended)
+            string used = null;
+            Texture main = null;
+            foreach (var p in family.MainTextures)
             {
-                Pixels.Unblend(rgba, Render(lightRotation, material, block, flat, submesh, width, height, new Color(1, 1, 1, 1)));
+                if (m.HasProperty(p))
+                {
+                    var t = m.GetTexture(p);
+                    if (p == "_MainTex" && blockMain != null)
+                    {
+                        t = blockMain;
+                    }
+                    if (t != null)
+                    {
+                        main = t;
+                        used = p;
+                        break;
+                    }
+                }
             }
+            var color = First(m, family.MainColors, Color.white);
+            byte[] px;
+            if (main != null)
+            {
+                Texture2D read = null;
+                try
+                {
+                    int tw = Mathf.Clamp(main.width, 1, 4096), th = Mathf.Clamp(main.height, 1, 4096);
+                    read = TextureCapture.ReadBack(main, tw, th, false);
+                    var scale = m.GetTextureScale(used);
+                    var offset = m.GetTextureOffset(used);
+                    px = Pixels.Place(TextureCapture.ToBytes(read.GetPixels32()), tw, th, width, height, scale.x, scale.y, offset.x, offset.y);
+                }
+                finally
+                {
+                    if (read != null)
+                    {
+                        UnityEngine.Object.DestroyImmediate(read);
+                    }
+                }
+            }
+            else
+            {
+                float[] solid = null;
+                foreach (var p in family.SolidFrom)
+                {
+                    var t = m.HasProperty(p) ? m.GetTexture(p) : null;
+                    if (t == null)
+                    {
+                        continue;
+                    }
+                    Texture2D read = null;
+                    try
+                    {
+                        read = TextureCapture.ReadBack(t, 32, 32, false);
+                        solid = Pixels.Average(TextureCapture.ToBytes(read.GetPixels32()));
+                        solid[3] = 1f;
+                    }
+                    finally
+                    {
+                        if (read != null)
+                        {
+                            UnityEngine.Object.DestroyImmediate(read);
+                        }
+                    }
+                    break;
+                }
+                px = solid != null ? Pixels.Solid(width * height, solid[0], solid[1], solid[2], solid[3]) : Pixels.Solid(width * height, 1f, 1f, 1f, 1f);
+            }
+            Pixels.Tint(px, color.r, color.g, color.b, color.a);
+            lit = px;
+            dark = (byte[])px.Clone();
+            var shade = First(m, family.ShadeColors, new Color(0.7f, 0.7f, 0.7f, 1f));
+            Pixels.Tint(dark, shade.r, shade.g, shade.b, 1f);
+            return used;
+        }
+
+        private static Color First(Material m, string[] props, Color fallback)
+        {
+            foreach (var p in props)
+            {
+                if (m.HasProperty(p))
+                {
+                    return m.GetColor(p);
+                }
+            }
+            return fallback;
+        }
+
+        /// <summary>RGBA bytes (bottom-up) as a PNG.</summary>
+        public static byte[] Encode(byte[] rgba, int width, int height)
+        {
             var tex = new Texture2D(width, height, TextureFormat.RGBA32, false);
             try
             {
@@ -243,6 +359,16 @@ namespace KK2Blender.Character
             {
                 UnityEngine.Object.DestroyImmediate(tex);
             }
+        }
+
+        private byte[] Rgba(Quaternion lightRotation, Material material, MaterialPropertyBlock block, Mesh flat, int submesh, int width, int height, bool blended)
+        {
+            var rgba = Render(lightRotation, material, block, flat, submesh, width, height, new Color(0, 0, 0, 0));
+            if (blended)
+            {
+                Pixels.Unblend(rgba, Render(lightRotation, material, block, flat, submesh, width, height, new Color(1, 1, 1, 1)));
+            }
+            return rgba;
         }
 
         /// <summary>One render of the material over <paramref name="background"/>, as bottom-up RGBA bytes.</summary>

@@ -21,7 +21,7 @@ namespace KK2Blender
     {
         public const string Guid = "com.juwanhwang.kk2blender";
         public const string Name = "KK2Blender";
-        public const string Version = "0.1.4";
+        public const string Version = "0.1.5";
 
         internal static ManualLogSource Log;
         internal static Plugin Instance;

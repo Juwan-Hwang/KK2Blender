@@ -11,7 +11,7 @@
     <Optimize>true</Optimize>
     <DebugType>embedded</DebugType>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Version>0.1.4</Version>
+    <Version>0.1.5</Version>
     <Deterministic>true</Deterministic>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <OutputPath>bin\</OutputPath>

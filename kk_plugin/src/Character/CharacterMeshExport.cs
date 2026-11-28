@@ -41,6 +41,7 @@ namespace KK2Blender.Character
             var relative = new List<object>();
             var failures = new List<object>();
             var stamp = DateTime.Now;
+            var diagnostics = new Diagnostics { Exporter = Plugin.Name + " " + Plugin.Version };
             for (int i = 0; i < characters.Count; i++)
             {
                 var oci = characters[i];
@@ -49,6 +50,7 @@ namespace KK2Blender.Character
                 var capture = new CharacterCapture(oci, paths != null && i < paths.Count ? paths[i] : null);
                 capture.Status = s => status(label + ": " + s);
                 capture.Outfits = Outfits != null && i < Outfits.Count ? Outfits[i] : null;
+                capture.Report = diagnostics.Begin(SafeName(oci));
                 IEnumerator steps = capture.Run();
                 Exception error = null;
                 while (true)
@@ -97,6 +99,7 @@ namespace KK2Blender.Character
                 }
                 if (error != null)
                 {
+                    capture.Report.Add("export_failed", null, error.Message);
                     Plugin.Log.LogError("Character mesh export failed for " + SafeName(oci) + ": " + error);
                     failures.Add(new JsonObject().Set("index", i).Set("name", SafeName(oci)).Set("error", error.Message));
                     bundles.Add(null);
@@ -110,6 +113,8 @@ namespace KK2Blender.Character
                 yield return null;
             }
 
+            WriteDiagnostics(exportFolder, diagnostics);
+
             string resultPath = Path.Combine(meshes, "result.json");
             File.WriteAllText(resultPath, JsonWriter.Write(new JsonObject()
                 .Set("exporter", Plugin.Name + " " + Plugin.Version)
@@ -122,6 +127,29 @@ namespace KK2Blender.Character
                 .Set("bundles", relative)
                 .Set("state", failures.Count == 0 ? "exported" : "partly_exported")
                 .Set("failures", failures);
+        }
+
+        /// <summary>The export's self-check: diagnostics.json and diagnostics.txt in the export folder, and
+        /// the summary in the BepInEx log.</summary>
+        public static void WriteDiagnostics(string folder, Diagnostics diagnostics)
+        {
+            string summary = diagnostics.Summary();
+            try
+            {
+                File.WriteAllText(Path.Combine(folder, "diagnostics.json"), JsonWriter.Write(diagnostics.ToJson()));
+                File.WriteAllText(Path.Combine(folder, "diagnostics.txt"), summary);
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogWarning("Couldn't write the export self-check: " + e.Message);
+            }
+            foreach (var line in summary.Split('\n'))
+            {
+                if (line.Length > 0)
+                {
+                    Plugin.Log.LogInfo(line);
+                }
+            }
         }
 
         private static string SafeName(OCIChar oci)

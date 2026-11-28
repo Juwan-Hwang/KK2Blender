@@ -25,38 +25,6 @@ namespace KK2Blender.Character
     {
         private static readonly HashSet<string> HalfOffNodes = new HashSet<string> { "n_top_b", "n_bot_b", "n_bot_c", "n_panst_b", "o_bra_b", "o_inner_b" };
 
-        private static readonly string[] TextureProps =
-        {
-            "_MainTex", "_ColorMask", "_NormalMap", "_NormalMapDetail", "_AlphaMask", "_LineMask", "_DetailMask",
-            "_overtex1", "_overtex2", "_overtex3", "_expression", "_HairGloss", "_AnotherRamp", "_liquidmask",
-            "_Texture2", "_Texture3", "_PatternMask1", "_PatternMask2", "_PatternMask3", "_PatternMask4", "_GlassRamp",
-        };
-
-        private static readonly string[] ColorProps =
-        {
-            "_Color", "_Color2", "_Color3", "_Color4", "_Color1_2", "_Color2_2", "_Color3_2", "_ShadowColor", "_shadowcolor",
-            "_SpecularColor", "_LineColor", "_EmissionColor", "_overcolor1", "_overcolor2", "_overcolor3", "_GlossColor",
-            "_LiquidTiling", "_Color5", "_Color6", "_Color7",
-        };
-
-        private static readonly string[] FloatProps =
-        {
-            "_SpecularPower", "_SpecularPowerNail", "_alpha_a", "_alpha_b", "_rimpower", "_rimV", "_ShadowExtend",
-            "_ShadowExtendAnother", "_DetailBLineG", "_DetailRLineR", "_notusetexspecular", "_nip", "_nipsize", "_nip_specular",
-            "_exppower", "_isHighLight", "_linetexon", "_liquidftop", "_liquidfbot", "_liquidbtop", "_liquidbbot", "_liquidface",
-            "_SizeSpeed", "_SizeWidth", "_AngleSpeed", "_yurayura", "_rotation", "_Cutoff", "_tex1mask", "_LineWidthS",
-            "_DetailNormalMapScale", "_EmissionPower", "_alpha", "_Alpha", "_reverse", "_hokuro", "_Blend",
-        };
-
-        private static readonly string[] VectorProps = { "_TileAnimation", "_HighLight", "_paint1", "_paint2" };
-
-        private static readonly Dictionary<string, string> TextureRoles = new Dictionary<string, string>
-        {
-            ["_MainTex"] = "main", ["_ColorMask"] = "color_mask", ["_NormalMap"] = "normal", ["_NormalMapDetail"] = "detail_normal",
-            ["_AlphaMask"] = "alpha_mask", ["_LineMask"] = "line_mask", ["_DetailMask"] = "detail_mask",
-            ["_overtex1"] = "overlay", ["_overtex2"] = "overlay", ["_overtex3"] = "overlay",
-        };
-
         private sealed class BoneRecord
         {
             public string Key, Name, ParentKey, Path;
@@ -97,6 +65,12 @@ namespace KK2Blender.Character
         private LightBaker baker;
         private string bodyMaterialKey;
         private readonly List<string> warnings = new List<string>();
+        /// <summary>Transforms a mod implanted into the body skeleton (ModBoneImplantor's BoneImplantProcess
+        /// trfSrc), with the owner of the item that brought them: they belong to its Outfit.</summary>
+        private readonly Dictionary<Transform, string> implanted = new Dictionary<Transform, string>();
+        private readonly HashSet<Transform> reportedImplants = new HashSet<Transform>();
+        private readonly ShaderTable shaderTable = ShaderTables.Get();
+        private Transform faceRoot;
 
         public CharacterCapture(OCIChar oci, PathTable paths)
         {
@@ -120,6 +94,8 @@ namespace KK2Blender.Character
         /// <summary>The outfits to export; null exports every outfit on the card. The current one is always added.</summary>
         public ICollection<int> Outfits;
         public Action<string> Status = s => { };
+        /// <summary>The self-check this capture reports into (diagnostics.json).</summary>
+        public Diagnostics.Character Report = new Diagnostics.Character();
 
         // --- the run ------------------------------------------------------------------------------
 
@@ -232,6 +208,55 @@ namespace KK2Blender.Character
             {
                 excluded.Add(cha.objHitHead);
             }
+            FindImplanted();
+        }
+
+        /// <summary>
+        /// ModBoneImplantor moves a mod item's extra bones (its BoneImplantProcess's trfSrc and everything
+        /// under it) into the body skeleton, under the body bone named like trfDst, for as long as the
+        /// item is worn. Read by reflection (the plugin is optional); those bones stay the item's, so they
+        /// are keyed and recorded with its Outfit instead of joining the body.
+        /// </summary>
+        private void FindImplanted()
+        {
+            implanted.Clear();
+            foreach (var mb in root.GetComponentsInChildren<MonoBehaviour>(true))
+            {
+                if (mb == null || mb.GetType().Name != "BoneImplantProcess")
+                {
+                    continue;
+                }
+                Transform src = null;
+                try
+                {
+                    var field = mb.GetType().GetField("trfSrc");
+                    src = field != null ? field.GetValue(mb) as Transform : null;
+                }
+                catch (Exception)
+                {
+                }
+                if (src == null || !src.IsChildOf(root) || src.IsChildOf(mb.transform))
+                {
+                    continue; // not implanted (yet): it still sits under its item
+                }
+                string owner = OwnerOf(mb.transform);
+                if (owner == null)
+                {
+                    continue;
+                }
+                implanted[src] = owner;
+            }
+            if (implanted.Count > 0)
+            {
+                foreach (var kv in implanted)
+                {
+                    if (!reportedImplants.Add(kv.Key))
+                    {
+                        continue;
+                    }
+                    Report.Add("implanted_bones", paths.Name(kv.Key), kv.Value + ", " + kv.Key.GetComponentsInChildren<Transform>(true).Length + " bones");
+                }
+            }
         }
 
         /// <summary>
@@ -268,8 +293,25 @@ namespace KK2Blender.Character
             return n.StartsWith("cf_hit", StringComparison.Ordinal) || n.StartsWith("cf_d_hit", StringComparison.Ordinal) || n.StartsWith("aa_hit", StringComparison.Ordinal);
         }
 
-        /// <summary>What owns a transform: "clothes:N", "accessory:N", "hair:N", or null for the body.</summary>
+        /// <summary>What owns a transform: "clothes:N", "accessory:N", "hair:N", or null for the body.
+        /// Bones a mod implanted into the body skeleton belong to the item that brought them.</summary>
         private string OutfitOwner(Transform t)
+        {
+            if (implanted.Count > 0)
+            {
+                for (var p = t; p != null && p != root; p = p.parent)
+                {
+                    string owner;
+                    if (implanted.TryGetValue(p, out owner))
+                    {
+                        return owner;
+                    }
+                }
+            }
+            return OwnerOf(t);
+        }
+
+        private string OwnerOf(Transform t)
         {
             for (var p = t; p != null && p != root; p = p.parent)
             {
@@ -338,7 +380,7 @@ namespace KK2Blender.Character
         private void RecordBones(int? outfit)
         {
             var all = root.GetComponentsInChildren<Transform>(true);
-            Transform faceRoot = null;
+            faceRoot = null;
             foreach (var t in all)
             {
                 if (t.name == "cf_J_FaceRoot")
@@ -358,11 +400,52 @@ namespace KK2Blender.Character
                 {
                     continue; // body bones in the Body Pass, Outfit-owned bones in their Outfit's
                 }
-                string key = KeyOf(t, outfit);
-                if (key == null || bones.ContainsKey(key))
+                RecordOne(t, outfit, owner);
+            }
+        }
+
+        /// <summary>
+        /// Records a skin bone the skeleton walk didn't (a bone outside its Pass's ownership, such as one
+        /// a plugin implanted that isn't marked), with its unrecorded ancestors, so its weights aren't
+        /// dropped. Returns its key, or null when it isn't under the character.
+        /// </summary>
+        private string EnsureBone(Transform t, int? outfit, string meshPath)
+        {
+            string key = KeyOf(t, outfit);
+            if (key == null || bones.ContainsKey(key))
+            {
+                return key;
+            }
+            var chain = new List<Transform>();
+            for (var p = t; p != null && p != root; p = p.parent)
+            {
+                if (IsHit(p))
                 {
                     continue;
                 }
+                string k = KeyOf(p, outfit);
+                if (k == null || bones.ContainsKey(k))
+                {
+                    break;
+                }
+                chain.Add(p);
+            }
+            for (int i = chain.Count - 1; i >= 0; i--)
+            {
+                RecordOne(chain[i], outfit, OutfitOwner(chain[i]));
+            }
+            Report.Add("late_bone", meshPath, paths.Name(t) + (chain.Count > 1 ? " (+" + (chain.Count - 1) + " parents)" : ""));
+            return bones.ContainsKey(key) ? key : null;
+        }
+
+        private void RecordOne(Transform t, int? outfit, string owner)
+        {
+            string key = KeyOf(t, outfit);
+            if (key == null || bones.ContainsKey(key))
+            {
+                return;
+            }
+            {
                 var parent = t.parent;
                 while (parent != null && parent != root && IsHit(parent))
                 {
@@ -377,7 +460,8 @@ namespace KK2Blender.Character
                     Path = paths.Name(t),
                     Outfit = owner != null ? outfit : null,
                     Current = ToAffine(root.worldToLocalMatrix * t.localToWorldMatrix),
-                    Hair = owner != null && owner.StartsWith("hair", StringComparison.Ordinal),
+                    Hair = owner != null && (owner.StartsWith("hair", StringComparison.Ordinal) ||
+                        (owner.StartsWith("accessory", StringComparison.Ordinal) && UnderHairComponent(t))),
                     UnderFace = faceRoot != null && t != faceRoot && t.IsChildOf(faceRoot),
                 };
                 if (parentKey == null)
@@ -469,11 +553,27 @@ namespace KK2Blender.Character
             return mf != null ? mf.sharedMesh : null;
         }
 
+        /// <summary>Whether a transform sits under a ChaCustomHairComponent: an accessory that is hair
+        /// (ao_hair items, hair mods put on accessory slots).</summary>
+        private bool UnderHairComponent(Transform t)
+        {
+            for (var p = t; p != null && p != root; p = p.parent)
+            {
+                if (p.GetComponent<ChaCustomHairComponent>() != null)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private string MaterialRole(Renderer r, Material m, int slot, int? outfit)
         {
             if (outfit.HasValue)
             {
-                return OutfitOwner(r.transform).StartsWith("hair", StringComparison.Ordinal) ? "hair" : null;
+                string owner = OutfitOwner(r.transform);
+                bool hairComponent = owner != null && owner.StartsWith("accessory", StringComparison.Ordinal) && UnderHairComponent(r.transform);
+                return MaterialRules.OutfitRole(owner, hairComponent, ShaderFamilies.Classify(m != null && m.shader != null ? m.shader.name : ""));
             }
             string name = r.name;
             if (r == cha.rendBody)
@@ -543,6 +643,7 @@ namespace KK2Blender.Character
             if (!mesh.isReadable)
             {
                 warnings.Add(path + ": the game doesn't let its mesh be read; it was left out");
+                Report.Add("renderer_skipped", path, "mesh " + mesh.name + " isn't readable");
                 return;
             }
             int n = mesh.vertexCount;
@@ -611,14 +712,22 @@ namespace KK2Blender.Character
                 if (smrBones.Length != bind.Length)
                 {
                     warnings.Add(path + ": " + smrBones.Length + " bones but " + bind.Length + " bind poses; skinned with the first " + boneCount);
+                    Report.Add("bone_count_mismatch", path, smrBones.Length + " bones, " + bind.Length + " bind poses");
                 }
                 skin.BoneKeys = new string[boneCount];
                 skin.Bindposes = new Affine[boneCount];
+                var missing = new List<string>();
                 for (int j = 0; j < boneCount; j++)
                 {
-                    string key = KeyOf(smrBones[j], outfit);
+                    // A bone the skeleton walk didn't record (outside its Pass's ownership) is added
+                    // rather than dropped with its weights.
+                    string key = smrBones[j] != null ? EnsureBone(smrBones[j], outfit, path) : null;
                     skin.BoneKeys[j] = key != null && bones.ContainsKey(key) ? key : null;
                     skin.Bindposes[j] = ToAffine(bind[j]);
+                    if (skin.BoneKeys[j] == null)
+                    {
+                        missing.Add(smrBones[j] != null ? smrBones[j].name : "#" + j + " (none)");
+                    }
                 }
                 skin.Joints = new int[n * 4];
                 skin.Weights = new float[n * 4];
@@ -638,6 +747,15 @@ namespace KK2Blender.Character
                         skin.Weights[i] = 0f;
                     }
                 }
+                if (missing.Count > 0)
+                {
+                    double dropped = SkinChecks.DroppedWeight(skin.BoneKeys, skin.Joints, skin.Weights);
+                    if (dropped > 0)
+                    {
+                        Report.Add("dropped_weights", path, dropped.ToString("0.##", CultureInfo.InvariantCulture) + " vertex weight on " +
+                            string.Join(", ", missing.GetRange(0, Math.Min(5, missing.Count)).ToArray()));
+                    }
+                }
                 bm.BoneKeys = skin.BoneKeys;
                 bm.Joints = skin.Joints;
                 bm.Weights = skin.Weights;
@@ -647,6 +765,7 @@ namespace KK2Blender.Character
                 if (skin.RendererKey == null)
                 {
                     warnings.Add(path + ": its transform isn't a bone; it was left out");
+                    Report.Add("renderer_skipped", path, "its transform isn't under the character");
                     return;
                 }
                 if (smr != null)
@@ -669,6 +788,26 @@ namespace KK2Blender.Character
                 skin.Bindposes = new[] { Affine.Identity };
             }
             rec.Skin = skin;
+
+            // Blend shape weights a plugin set (ClothingBlendShape, BlendShapeCreator) are sampled every
+            // frame by the scene bake; the bundle notes the ones set at export for a still import.
+            if (smr != null && mesh.blendShapeCount > 0 && !rec.Face)
+            {
+                var set = new Format.JsonObject();
+                for (int s = 0; s < mesh.blendShapeCount; s++)
+                {
+                    float w = smr.GetBlendShapeWeight(s);
+                    if (Math.Abs(w) > 1e-3f)
+                    {
+                        set.Set(mesh.GetBlendShapeName(s), w);
+                    }
+                }
+                if (set.Count > 0 && outfit.HasValue)
+                {
+                    bm.Info.Set("blend_shape_weights", set);
+                    Report.Add("blend_shape_weights", path, set.Count + " shapes");
+                }
+            }
 
             // Raw blend shapes, in index order.
             for (int s = 0; s < mesh.blendShapeCount; s++)
@@ -698,6 +837,10 @@ namespace KK2Blender.Character
                     continue;
                 }
                 string matKey = prefix + path + ":" + slot.ToString(CultureInfo.InvariantCulture);
+                if (MaterialRules.IsOverlayCopy(slot, subs))
+                {
+                    Report.Add("me_copy", path, "slot " + slot + " (" + m.name.Replace(" (Instance)", "") + ") draws submesh " + sub + " again");
+                }
                 var material = CaptureMaterial(r, m, slot, sub, mesh, matKey, path, MaterialRole(r, m, slot, outfit), outfit);
                 bundle.Materials.Add(material);
                 if (r == cha.rendBody && slot == 0 && !outfit.HasValue)
@@ -800,24 +943,24 @@ namespace KK2Blender.Character
 
         // --- materials ------------------------------------------------------------------------------------
 
-        private static string BlendMode(Material m, string role)
+        private static string BlendMode(Material m, string role, ShaderFamily family)
         {
-            return MaterialRules.BlendMode(m.shader != null ? m.shader.name : "", m.renderQueue, role);
+            float mode = m.HasProperty("_Mode") ? m.GetFloat("_Mode") : float.NaN;
+            return MaterialRules.BlendMode(m.shader != null ? m.shader.name : "", m.renderQueue, role, family, mode);
         }
 
-        private BundleTexture TextureOf(Material m, string prop, string variant = null)
+        private BundleTexture TextureOf(Material m, string prop, string role, Texture overrideTex = null, string variant = null, string path = null)
         {
-            var tex = m.GetTexture(prop);
+            var tex = overrideTex ?? m.GetTexture(prop);
             if (tex == null)
             {
                 return null;
             }
-            string role;
-            TextureRoles.TryGetValue(prop, out role);
             bool normal = role == "normal" || role == "detail_normal";
             var png = textures.Png(tex, normal);
             if (png == null)
             {
+                Report.Add("unreadable_texture", path ?? m.name, prop + " (" + tex.name + ")");
                 return null;
             }
             var offset = m.GetTextureOffset(prop);
@@ -834,69 +977,156 @@ namespace KK2Blender.Character
             };
         }
 
+        /// <summary>Texture properties in the order their Texture Roles are given: KK's own names, then the
+        /// family's main textures and normal maps in its order, then the rest by name.</summary>
+        private static int TexturePriority(string prop, ShaderFamily family)
+        {
+            if (MaterialRules.TextureRole(prop, null, null) != null)
+            {
+                return 0;
+            }
+            int main = Array.IndexOf(family.MainTextures, prop);
+            if (main >= 0)
+            {
+                return 1 + main;
+            }
+            int normal = Array.IndexOf(family.NormalMaps, prop);
+            if (normal >= 0)
+            {
+                return 20 + normal;
+            }
+            return 100;
+        }
+
+        /// <summary>
+        /// A material with every property its shader has (by the shader property tables: Unity 5.6 can't
+        /// list them), so Material Editor edits on any shader reach the bundle; its Blend Mode, Material
+        /// Role and textures by its shader family (docs/shader-mapping.md), and its light/dark bake.
+        /// </summary>
         private BundleMaterial CaptureMaterial(Renderer r, Material m, int slot, int submesh, Mesh mesh, string key, string path, string role, int? outfit)
         {
+            string shaderName = m.shader != null ? m.shader.name : "";
+            var family = ShaderFamilies.Classify(shaderName);
             var bmat = new BundleMaterial
             {
                 Key = key,
                 Name = m.name.Replace(" (Instance)", ""),
-                Shader = m.shader != null ? m.shader.name : "",
+                Shader = shaderName,
                 Role = role,
-                BlendMode = BlendMode(m, role),
+                BlendMode = BlendMode(m, role, family),
                 Path = path,
                 Slot = slot,
             };
-            foreach (var p in ColorProps)
+            Report.Shader(shaderName, family, bmat.BlendMode, bmat.Name);
+            if (role == null)
             {
-                if (m.HasProperty(p))
+                if (outfit.HasValue)
                 {
-                    var c = m.GetColor(p);
-                    bmat.Colors.Add(new KeyValuePair<string, float[]>(p, new[] { c.r, c.g, c.b, c.a }));
+                    Report.OutfitMaterialsWithoutRole++;
+                }
+                else
+                {
+                    Report.Add("no_role", path + ":" + slot, bmat.Name + " (" + shaderName + ")");
                 }
             }
-            foreach (var p in FloatProps)
+
+            // Plugins can set textures through the renderer's property block rather than the material.
+            MaterialPropertyBlock block = null;
+            var b = new MaterialPropertyBlock();
+            r.GetPropertyBlock(b);
+            if (!b.isEmpty)
             {
-                if (m.HasProperty(p))
+                block = b;
+            }
+
+            var textureProps = new List<string>();
+            foreach (var p in shaderTable.For(shaderName))
+            {
+                if (!m.HasProperty(p.Name))
                 {
-                    bmat.Floats.Add(new KeyValuePair<string, float>(p, m.GetFloat(p)));
+                    continue;
+                }
+                switch (p.Kind)
+                {
+                    case 'c':
+                        var c = m.GetColor(p.Name);
+                        bmat.Colors.Add(new KeyValuePair<string, float[]>(p.Name, new[] { c.r, c.g, c.b, c.a }));
+                        break;
+                    case 'v':
+                        var v = m.GetVector(p.Name);
+                        bmat.Vectors.Add(new KeyValuePair<string, float[]>(p.Name, new[] { v.x, v.y, v.z, v.w }));
+                        break;
+                    case 't':
+                        textureProps.Add(p.Name);
+                        break;
+                    default:
+                        bmat.Floats.Add(new KeyValuePair<string, float>(p.Name, m.GetFloat(p.Name)));
+                        break;
                 }
             }
-            foreach (var p in VectorProps)
+            textureProps.Sort((x, y) =>
             {
-                if (m.HasProperty(p))
-                {
-                    var v = m.GetVector(p);
-                    bmat.Vectors.Add(new KeyValuePair<string, float[]>(p, new[] { v.x, v.y, v.z, v.w }));
-                }
-            }
+                int d = TexturePriority(x, family).CompareTo(TexturePriority(y, family));
+                return d != 0 ? d : string.CompareOrdinal(x, y);
+            });
             bool bodyMaterial = r == cha.rendBody && slot == 0 && !outfit.HasValue;
-            foreach (var p in TextureProps)
+            var taken = new HashSet<string>();
+            Texture blockMain = null;
+            foreach (var p in textureProps)
             {
-                if (!m.HasProperty(p) || (bodyMaterial && p == "_AlphaMask"))
+                if (bodyMaterial && p == "_AlphaMask")
                 {
                     continue; // the body's alpha mask is the Outfit's (body_textures)
                 }
-                var t = TextureOf(m, p);
+                Texture fromBlock = block != null ? block.GetTexture(p) : null;
+                if (fromBlock != null)
+                {
+                    Report.Add("property_block_texture", path + ":" + slot, p + " (" + fromBlock.name + ")");
+                    if (p == "_MainTex")
+                    {
+                        blockMain = fromBlock;
+                    }
+                }
+                if ((fromBlock ?? m.GetTexture(p)) == null)
+                {
+                    continue;
+                }
+                var t = TextureOf(m, p, MaterialRules.TextureRole(p, family, taken), fromBlock, null, path);
                 if (t != null)
                 {
                     bmat.Textures.Add(t);
                 }
             }
+            if (!family.Modelled && family.Bake != BakeKind.Invisible && !taken.Contains("main") && family.SolidFrom.Length == 0)
+            {
+                Report.Add("missing_main_texture", path + ":" + slot, bmat.Name + " (" + shaderName + ", family " + family.Id + ")");
+            }
             if (baker != null && role != "tears" && role != "gag_eyes")
             {
-                AddBakes(r, m, submesh, mesh, bmat, role == "body" || role == "face", bmat.BlendMode == "alpha" || bmat.BlendMode == "glasses");
+                AddBakes(r, m, submesh, mesh, bmat, role == "body" || role == "face", bmat.BlendMode == "alpha" || bmat.BlendMode == "glasses", family, blockMain);
             }
             return bmat;
         }
 
-        private void AddBakes(Renderer r, Material m, int submesh, Mesh mesh, BundleMaterial bmat, bool skin, bool blended)
+        private void AddBakes(Renderer r, Material m, int submesh, Mesh mesh, BundleMaterial bmat, bool skin, bool blended, ShaderFamily family, Texture blockMain)
         {
             bool overlay = LightBaker.HasOverlay(m);
             int cacheKey = m.GetInstanceID();
             BundleTexture[] made;
             if (overlay || !bakes.TryGetValue(cacheKey, out made))
             {
-                var main = m.HasProperty("_MainTex") ? m.GetTexture("_MainTex") : null;
+                var main = m.HasProperty("_MainTex") ? (blockMain ?? m.GetTexture("_MainTex")) : null;
+                if (main == null)
+                {
+                    foreach (var p in family.MainTextures)
+                    {
+                        if (m.HasProperty(p) && m.GetTexture(p) != null)
+                        {
+                            main = m.GetTexture(p);
+                            break;
+                        }
+                    }
+                }
                 int w = main != null ? main.width : 512;
                 int h = main != null ? main.height : 512;
                 if (skin)
@@ -905,30 +1135,62 @@ namespace KK2Blender.Character
                 }
                 w = Mathf.Clamp(w, 4, 4096);
                 h = Mathf.Clamp(h, 4, 4096);
-                Mesh flat = overlay ? LightBaker.Flatten(mesh) : null;
                 byte[] lit, dark;
                 try
                 {
-                    baker.Bake(r, m, submesh, flat, w, h, blended, out lit, out dark);
+                    if (family.Bake == BakeKind.Invisible)
+                    {
+                        w = h = 4;
+                        lit = Pixels.Solid(w * h, 0f, 0f, 0f, 0f);
+                        dark = Pixels.Solid(w * h, 0f, 0f, 0f, 0f);
+                    }
+                    else if (family.Bake == BakeKind.Flat)
+                    {
+                        LightBaker.Flat(m, family, blockMain, w, h, out lit, out dark);
+                    }
+                    else
+                    {
+                        Mesh flat = overlay ? LightBaker.Flatten(mesh) : null;
+                        try
+                        {
+                            baker.Bake(r, m, submesh, flat, w, h, blended, family, out lit, out dark);
+                        }
+                        finally
+                        {
+                            if (flat != null)
+                            {
+                                UnityEngine.Object.DestroyImmediate(flat);
+                            }
+                        }
+                        // A shader a UV-space render can't draw leaves the bake empty: use its
+                        // texture times its colour instead.
+                        double coverage = Pixels.Coverage(lit);
+                        if (coverage < 0.05 && !skin)
+                        {
+                            byte[] flatLit, flatDark;
+                            LightBaker.Flat(m, family, blockMain, w, h, out flatLit, out flatDark);
+                            if (Pixels.GameBakeLooksEmpty(coverage, Pixels.Coverage(flatLit)))
+                            {
+                                Report.Add("bake_fallback", bmat.Path + ":" + bmat.Slot, bmat.Shader + ": the game bake showed " +
+                                    (coverage * 100).ToString("0.#", CultureInfo.InvariantCulture) + "% of the texture");
+                                lit = flatLit;
+                                dark = flatDark;
+                            }
+                        }
+                    }
                 }
                 catch (Exception e)
                 {
                     warnings.Add(bmat.Path + ": the light/dark bake failed (" + e.Message + ")");
+                    Report.Add("bake_failed", bmat.Path + ":" + bmat.Slot, e.Message);
                     return;
-                }
-                finally
-                {
-                    if (flat != null)
-                    {
-                        UnityEngine.Object.DestroyImmediate(flat);
-                    }
                 }
                 var offset = m.HasProperty("_MainTex") ? m.GetTextureOffset("_MainTex") : Vector2.zero;
                 var scale = m.HasProperty("_MainTex") ? m.GetTextureScale("_MainTex") : Vector2.one;
                 made = new[]
                 {
-                    new BundleTexture { Role = "main", Raw = "_MainTex", Variant = "light", Png = lit, Offset = new[] { offset.x, offset.y }, Scale = new[] { scale.x, scale.y } },
-                    new BundleTexture { Role = "main", Raw = "_MainTex", Variant = "dark", Png = dark, Offset = new[] { offset.x, offset.y }, Scale = new[] { scale.x, scale.y } },
+                    new BundleTexture { Role = "main", Raw = "_MainTex", Variant = "light", Png = LightBaker.Encode(lit, w, h), Offset = new[] { offset.x, offset.y }, Scale = new[] { scale.x, scale.y } },
+                    new BundleTexture { Role = "main", Raw = "_MainTex", Variant = "dark", Png = LightBaker.Encode(dark, w, h), Offset = new[] { offset.x, offset.y }, Scale = new[] { scale.x, scale.y } },
                 };
                 if (!overlay)
                 {
@@ -956,7 +1218,7 @@ namespace KK2Blender.Character
             {
                 return;
             }
-            var t = TextureOf(m, "_AlphaMask");
+            var t = TextureOf(m, "_AlphaMask", "alpha_mask");
             if (t != null)
             {
                 pass.BodyTextures.Add(new BundleBodyTexture { MaterialKey = bodyMaterialKey, Texture = t });
