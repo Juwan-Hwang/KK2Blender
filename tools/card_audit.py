@@ -64,7 +64,8 @@ Shader?Forge/main_StandardMDK_studio Shader?Forge/main_alpha Shader?Forge/main_c
 Shader?Forge/main_emblem_clothes Shader?Forge/main_hair Shader?Forge/main_hair_front Shader?Forge/main_item
 Shader?Forge/main_item_ditherd Shader?Forge/main_item_emission Shader?Forge/main_item_glasses
 Shader?Forge/main_item_studio Shader?Forge/main_item_studio_add Shader?Forge/main_item_studio_alpha
-Shader?Forge/main_opaque Shader?Forge/main_opaque2 Shader?Forge/main_opaque_low Shader?Forge/main_skin
+Shader?Forge/main_opaque Shader?Forge/main_opaque2 Shader?Forge/main_opaque_low Shader?Forge/main_opaque_low2
+Shader?Forge/main_hair_low Shader?Forge/main_item_low Shader?Forge/main_opaque_culloff Shader?Forge/main_skin
 Shader?Forge/main_skin_low Shader?Forge/main_texture Shader?Forge/mnpb Shader?Forge/shadowcast
 Shader?Forge/studio_hair_07 Shader?Forge/toon_eye_lod0 Shader?Forge/toon_eyew_lod0 Shader?Forge/toon_glasses_lod0
 Shader?Forge/toon_nose_lod0 Shader?Forge/toon_textureanimation xukmi/EyePlus xukmi/EyePlusTess xukmi/EyeWPlus

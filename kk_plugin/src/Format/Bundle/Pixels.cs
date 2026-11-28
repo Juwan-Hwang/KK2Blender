@@ -82,6 +82,128 @@ namespace KK2Blender.Format.Bundle
             }
         }
 
+        /// <summary>Multiplies every pixel by a colour (0..1 per channel, alpha included).</summary>
+        public static void Tint(byte[] rgba, float r, float g, float b, float a)
+        {
+            float[] k = { Clamp01(r), Clamp01(g), Clamp01(b), Clamp01(a) };
+            for (int i = 0; i + 3 < rgba.Length; i += 4)
+            {
+                for (int c = 0; c < 4; c++)
+                {
+                    rgba[i + c] = (byte)Math.Round(rgba[i + c] * k[c]);
+                }
+            }
+        }
+
+        private static float Clamp01(float v)
+        {
+            return float.IsNaN(v) ? 1f : Math.Max(0f, Math.Min(1f, v));
+        }
+
+        /// <summary>
+        /// A texture as a material places it over UV space once: target pixel (u, v) shows the source at
+        /// (u * scale + offset), repeating, sampled bilinearly. Source and target are bottom-up RGBA.
+        /// </summary>
+        public static byte[] Place(byte[] src, int sw, int sh, int dw, int dh, float scaleX, float scaleY, float offsetX, float offsetY)
+        {
+            var dst = new byte[dw * dh * 4];
+            for (int y = 0; y < dh; y++)
+            {
+                double v = ((y + 0.5) / dh * scaleY + offsetY) * sh - 0.5;
+                int y0 = (int)Math.Floor(v);
+                double fy = v - y0;
+                int ya = Wrap(y0, sh), yb = Wrap(y0 + 1, sh);
+                for (int x = 0; x < dw; x++)
+                {
+                    double u = ((x + 0.5) / dw * scaleX + offsetX) * sw - 0.5;
+                    int x0 = (int)Math.Floor(u);
+                    double fx = u - x0;
+                    int xa = Wrap(x0, sw), xb = Wrap(x0 + 1, sw);
+                    int o = (y * dw + x) * 4;
+                    for (int c = 0; c < 4; c++)
+                    {
+                        double top = src[(ya * sw + xa) * 4 + c] * (1 - fx) + src[(ya * sw + xb) * 4 + c] * fx;
+                        double bottom = src[(yb * sw + xa) * 4 + c] * (1 - fx) + src[(yb * sw + xb) * 4 + c] * fx;
+                        dst[o + c] = (byte)Math.Max(0, Math.Min(255, Math.Round(top * (1 - fy) + bottom * fy)));
+                    }
+                }
+            }
+            return dst;
+        }
+
+        private static int Wrap(int i, int n)
+        {
+            int r = i % n;
+            return r < 0 ? r + n : r;
+        }
+
+        /// <summary>A copy filled with one colour (0..1 per channel).</summary>
+        public static byte[] Solid(int pixels, float r, float g, float b, float a)
+        {
+            var px = new byte[pixels * 4];
+            byte[] c = { (byte)Math.Round(Clamp01(r) * 255), (byte)Math.Round(Clamp01(g) * 255), (byte)Math.Round(Clamp01(b) * 255), (byte)Math.Round(Clamp01(a) * 255) };
+            for (int i = 0; i < px.Length; i += 4)
+            {
+                px[i] = c[0];
+                px[i + 1] = c[1];
+                px[i + 2] = c[2];
+                px[i + 3] = c[3];
+            }
+            return px;
+        }
+
+        /// <summary>The average colour (0..1, alpha-weighted RGB and plain alpha) of a buffer.</summary>
+        public static float[] Average(byte[] rgba)
+        {
+            double r = 0, g = 0, b = 0, a = 0;
+            int n = rgba.Length / 4;
+            for (int i = 0; i + 3 < rgba.Length; i += 4)
+            {
+                double w = rgba[i + 3] / 255.0;
+                r += rgba[i] * w;
+                g += rgba[i + 1] * w;
+                b += rgba[i + 2] * w;
+                a += w;
+            }
+            if (n == 0)
+            {
+                return new[] { 0f, 0f, 0f, 0f };
+            }
+            return a > 0
+                ? new[] { (float)(r / a / 255), (float)(g / a / 255), (float)(b / a / 255), (float)(a / n) }
+                : new[] { 0f, 0f, 0f, 0f };
+        }
+
+        /// <summary>
+        /// The share (0..1) of pixels that show something: not transparent (alpha above 5%) and not
+        /// black (a channel above 2%). A game bake far below the same material's texture-times-colour
+        /// bake drew nothing useful (a shader a UV-space render can't draw).
+        /// </summary>
+        public static double Coverage(byte[] rgba)
+        {
+            int n = rgba.Length / 4;
+            if (n == 0)
+            {
+                return 0;
+            }
+            int shown = 0;
+            for (int i = 0; i + 3 < rgba.Length; i += 4)
+            {
+                if (rgba[i + 3] > 12 && (rgba[i] > 5 || rgba[i + 1] > 5 || rgba[i + 2] > 5))
+                {
+                    shown++;
+                }
+            }
+            return (double)shown / n;
+        }
+
+        /// <summary>Whether a game bake should be replaced by the Flat (texture x colour) one: it shows
+        /// under a tenth of what the Flat bake shows, and the Flat bake shows a fair part (over 5%).</summary>
+        public static bool GameBakeLooksEmpty(double gameCoverage, double flatCoverage)
+        {
+            return flatCoverage > 0.05 && gameCoverage < flatCoverage * 0.1;
+        }
+
         /// <summary>A PNG (8-bit RGBA) of a bottom-up RGBA buffer.</summary>
         public static byte[] EncodePng(byte[] rgba, int width, int height)
         {
