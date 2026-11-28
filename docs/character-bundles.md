@@ -22,7 +22,9 @@ visibility channels decide what shows. Left out: mosaic and male-part stand-ins,
 shadow proxy (`o_shadowcaster`), the head's `o_Mask(Clone)` quad, the condom, the body's rigged tongue (`n_tang/o_tang`, see below), hit meshes and hit transforms, and meshes the
 game doesn't let scripts read (none in KK as far as known; each is a warning in the log).
 
-Materials carry their shader values, every texture slot they hold (normal maps unpacked from Unity's
+Materials carry every property their shader has (read through shader property tables, since Unity 5.6
+can't list them; shaders KKBP doesn't model are mapped by family, see [shader-mapping.md](shader-mapping.md),
+which also describes the per-export self-check, `diagnostics.json`), every texture slot they hold (normal maps unpacked from Unity's
 DXT5nm), and the light and dark main texture bakes KKBP's templates require, rendered with the game's own
 shader on a UV-space quad (and the flattened mesh for overlays on body and face) by our own camera and light.
 Tears and gag eyes get no bake (their templates don't use one). A blended material (Blend Mode `alpha` or
